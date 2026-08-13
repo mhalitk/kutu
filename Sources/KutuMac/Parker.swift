@@ -77,4 +77,36 @@ public final class Parker {
             if let id = WindowID(key) { _ = unpark(id) }
         }
     }
+
+    /// Called at launch. Windows the saved state says are parked but which no
+    /// longer belong to a hidden box are restored, so a crash mid-switch or a
+    /// config change can never leave a window unreachable.
+    public func reconcile(activeBox: String,
+                          membership: Membership,
+                          pinnedBundleIDs: Set<String>,
+                          windows: [KutuWindow]) {
+        let byID = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0) })
+
+        for key in store.parkedFrames.keys {
+            guard let id = WindowID(key) else {
+                store.mutate { $0.parkedFrames.removeValue(forKey: key) }
+                continue
+            }
+            guard let ref = byID[id] else {
+                // The window died while parked; the frame is meaningless now.
+                store.mutate { $0.parkedFrames.removeValue(forKey: key) }
+                continue
+            }
+            let shouldStayHidden: Bool
+            switch membership.tier(of: ref, pinnedBundleIDs: pinnedBundleIDs) {
+            case .pinned:
+                shouldStayHidden = false
+            case .boxed(let box):
+                shouldStayHidden = box != activeBox
+            case .loose:
+                shouldStayHidden = activeBox != Membership.lobby
+            }
+            if !shouldStayHidden { _ = unpark(id) }
+        }
+    }
 }

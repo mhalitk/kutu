@@ -285,6 +285,55 @@ switchParker.unparkAll()
 switchRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
 
+Check.emit("=== Recovery ===")
+
+let recoveryFile = scratch.appendingPathComponent("recovery.txt")
+try? "kutu".write(to: recoveryFile, atomically: true, encoding: .utf8)
+let openRecovery = Process()
+openRecovery.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openRecovery.arguments = ["-a", "TextEdit", recoveryFile.path]
+try? openRecovery.run()
+openRecovery.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+let recoveryRegistry = WindowRegistry()
+recoveryRegistry.start()
+recoveryRegistry.refresh()
+let recoveryPath = scratch.appendingPathComponent("recovery.json").path
+let recoveryParker = Parker(resolver: recoveryRegistry, store: StateStore(file: StateFile(path: recoveryPath)))
+
+guard let victim = recoveryRegistry.windows.first(where: { $0.bundleID == "com.apple.TextEdit" }) else {
+    Check.run("recovery window exists") { (false, "no TextEdit window") }
+    Check.finish()
+}
+let victimFrame = victim.frame
+
+Check.run("a window parked by a dead run is rescued on relaunch") {
+    _ = recoveryParker.park(victim)
+    Thread.sleep(forTimeInterval: 0.3)
+
+    // Simulate relaunch: brand new Parker reading the same state file, then
+    // reconcile against a membership that no longer mentions the window.
+    let revived = Parker(resolver: recoveryRegistry, store: StateStore(file: StateFile(path: recoveryPath)))
+    recoveryRegistry.refresh()
+    revived.reconcile(activeBox: Membership.lobby,
+                      membership: Membership(),
+                      pinnedBundleIDs: [],
+                      windows: recoveryRegistry.windows)
+    Thread.sleep(forTimeInterval: 0.3)
+
+    recoveryRegistry.refresh()
+    guard let now = recoveryRegistry.windows.first(where: { $0.id == victim.id }) else {
+        return (false, "window disappeared")
+    }
+    let restored = abs(now.frame.minX - victimFrame.minX) < 2 && abs(now.frame.minY - victimFrame.minY) < 2
+    return (restored, "want \(victimFrame.origin) got \(now.frame.origin)")
+}
+
+recoveryParker.unparkAll()
+recoveryRegistry.stop()
+closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h. Closing a window

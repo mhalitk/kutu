@@ -6,6 +6,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     public var onPanic: (() -> Void)?
     public var onQuit: (() -> Void)?
     public var onOpenPalette: (() -> Void)?
+    public var onReloadConfig: (() -> Void)?
 
     private let statusItem: NSStatusItem
     private let switcher: Switcher
@@ -84,6 +85,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
         let parked = parker.parkedIDs.count
         add(menu, "Unpark everything (\(parked) hidden)", #selector(panic))
+        add(menu, "Reload config", #selector(reloadConfig))
         add(menu, "Quit kutu", #selector(quit)).keyEquivalent = "q"
     }
 
@@ -94,6 +96,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openPalette() { onOpenPalette?() }
     @objc private func panic() { onPanic?() }
+    @objc private func reloadConfig() { onReloadConfig?() }
     @objc private func quit() { onQuit?() }
     @objc private func openStageManagerSettings() { StageManagerGuard.openSettings() }
 

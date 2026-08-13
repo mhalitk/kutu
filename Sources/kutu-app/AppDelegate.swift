@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshUI()
         }
         menuBar.onQuit = { NSApp.terminate(nil) }
+        menuBar.onReloadConfig = { [weak self] in self?.reloadConfig() }
 
         palette = PaletteWindow()
         menuBar.onOpenPalette = { [weak self] in self?.showPalette() }
@@ -88,12 +89,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         registry.start()
 
+        registry.refresh()
+        parker.reconcile(activeBox: switcher.activeBox,
+                         membership: switcher.membership,
+                         pinnedBundleIDs: Set(config.pinnedBundleIDs),
+                         windows: registry.windows)
+
         refreshUI()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         // Never leave a window the user cannot reach.
         parker?.unparkAll()
+    }
+
+    private func reloadConfig() {
+        config = (try? KutuConfig.load(from: Self.configPath)) ?? KutuConfig()
+        switcher.reload(config: config)
+        menuBar.reload(config: config)
+        activationGuard.reload(pinnedBundleIDs: Set(config.pinnedBundleIDs))
+        hotKey?.unregister()
+        hotKey = HotKey(spec: config.hotkey) { [weak self] in self?.showPalette() }
+        refreshUI()
     }
 
     private func switchTo(_ box: String) {
