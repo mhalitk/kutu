@@ -11,6 +11,7 @@ public final class WindowRegistry: NSObject, WindowResolving {
     private var byID: [WindowID: ManagedWindow] = [:]
     private var observers: [pid_t: AXObserver] = [:]
     private var running = false
+    private var isRefreshing = false
 
     public var windows: [KutuWindow] { byID.values.map(\.ref) }
 
@@ -43,7 +44,18 @@ public final class WindowRegistry: NSObject, WindowResolving {
 
     /// Full resweep. Cheap enough to run on demand (12 windows measured at well
     /// under a frame) and the recovery path when a notification is missed.
+    ///
+    /// Non-reentrant by design. The callbacks below fire mid-sweep, and a
+    /// consumer that reacts by asking for another sweep would leave this one
+    /// iterating a stale view of what was known — emitting duplicate added or
+    /// removed events for the same window. One sweep at a time; the nested
+    /// request is redundant anyway, since the outer sweep reconciles against
+    /// live state.
     public func refresh() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         let current = AXBridge.allStandardWindows()
         let currentIDs = Set(current.map(\.ref.id))
         let knownIDs = Set(byID.keys)
@@ -60,6 +72,16 @@ public final class WindowRegistry: NSObject, WindowResolving {
         for window in current where knownIDs.contains(window.ref.id) {
             byID[window.ref.id] = window
         }
+    }
+
+    /// An AXObserver holds an *unretained* pointer to self as its notification
+    /// context, and CoreFoundation gives no zeroing-weak guarantee for it. A
+    /// registry released while still observing would have the next notification
+    /// dereference freed memory, so teardown cannot be left to the caller.
+    /// Assumes start/stop/deinit occur on the run loop the sources were added
+    /// to, which for kutu is always the main one.
+    deinit {
+        stop()
     }
 
     private func observe(_ app: NSRunningApplication) {
