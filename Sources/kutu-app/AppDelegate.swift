@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var assigner: Assigner!
     private var menuBar: MenuBarController!
     private var mask: SliverMask!
+    private var palette: PaletteWindow!
+    private var hotKey: HotKey?
     private let tracker = StatusTracker()
     private var config = KutuConfig()
 
@@ -45,6 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshUI()
         }
         menuBar.onQuit = { NSApp.terminate(nil) }
+
+        palette = PaletteWindow()
+        menuBar.onOpenPalette = { [weak self] in self?.showPalette() }
+        mask.onClick = { [weak self] in self?.showPalette() }
+        hotKey = HotKey(spec: config.hotkey) { [weak self] in self?.showPalette() }
+        if hotKey == nil {
+            NSLog("kutu: could not register hotkey '\(config.hotkey)'")
+        }
+
         switcher.onChange = { [weak self] in self?.refreshUI() }
 
         registry.onWindowAdded = { [weak self] ref in
@@ -68,6 +79,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func switchTo(_ box: String) {
         switcher.switchTo(box)
         refreshUI()
+    }
+
+    private func showPalette() {
+        guard !palette.isVisible else {
+            palette.dismiss()
+            return
+        }
+        let counts = Dictionary(grouping: registry.windows) { window in
+            switcher.membership.boxName(for: window,
+                                        pinnedBundleIDs: Set(config.pinnedBundleIDs))
+        }.mapValues(\.count)
+
+        let rows = switcher.knownBoxes.map { box in
+            PaletteRow(name: box,
+                       state: tracker.state(forBox: box,
+                                            directory: config.boxes.first { $0.name == box }?.dir),
+                       windowCount: counts[box] ?? 0)
+        }
+        palette.present(boxes: rows) { [weak self] box in self?.switchTo(box) }
     }
 
     private func refreshUI() {
