@@ -13,6 +13,10 @@ let package = Package(
     targets: [
         .target(name: "KutuCore", dependencies: ["TOMLKit"],
                 swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "KutuMac", dependencies: ["KutuCore"],
+                swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "kutu-axcheck", dependencies: ["KutuMac"],
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "KutuCoreTests", dependencies: ["KutuCore"],
                     swiftSettings: [.swiftLanguageMode(.v5)])
     ]
