@@ -132,6 +132,58 @@ Check.run("unparkAll rescues windows after a simulated crash") {
 
 closeAll(textEditWindows())
 
+Check.emit("=== WindowRegistry ===")
+
+let registry = WindowRegistry()
+registry.start()
+Thread.sleep(forTimeInterval: 0.5)
+
+Check.run("initial sweep finds the same windows as a direct scan") {
+    let direct = Set(AXBridge.allStandardWindows().map(\.ref.id))
+    let seen = Set(registry.windows.map(\.id))
+    return (seen == direct, "registry \(seen.count) vs direct \(direct.count)")
+}
+
+var added: [WindowID] = []
+var removed: [WindowID] = []
+registry.onWindowAdded = { added.append($0.id) }
+registry.onWindowRemoved = { removed.append($0) }
+
+let newFile = scratch.appendingPathComponent("registry.txt")
+try? "kutu".write(to: newFile, atomically: true, encoding: .utf8)
+let openNew = Process()
+openNew.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openNew.arguments = ["-a", "TextEdit", newFile.path]
+try? openNew.run()
+openNew.waitUntilExit()
+
+// AX notifications arrive on the run loop, so pump it rather than sleeping.
+let addDeadline = Date().addingTimeInterval(5)
+while added.isEmpty && Date() < addDeadline {
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+}
+
+Check.run("observes a newly created window") {
+    (!added.isEmpty, "added \(added.count)")
+}
+
+Check.run("resolves an element for the new window") {
+    guard let id = added.first else { return (false, "nothing added") }
+    return (registry.element(for: id) != nil, "id \(id)")
+}
+
+closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+let removeDeadline = Date().addingTimeInterval(5)
+while removed.isEmpty && Date() < removeDeadline {
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+}
+
+Check.run("observes a closed window") {
+    (!removed.isEmpty, "removed \(removed.count)")
+}
+
+registry.stop()
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h. Closing a window
