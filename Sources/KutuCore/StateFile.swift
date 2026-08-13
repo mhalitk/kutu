@@ -69,11 +69,17 @@ public final class StateStore: @unchecked Sendable {
     public var activeBox: String { snapshot().activeBox }
     public var parkedFrames: [String: CGRect] { snapshot().parkedFrames }
 
+    /// The lock is deliberately held across the file write, not just the
+    /// in-memory mutation. Releasing it first lets two writers' saves race, so
+    /// an earlier, smaller snapshot can land on disk after a later one and
+    /// silently drop a mutation — and a dropped parked-frame is a window the
+    /// user cannot reach. The file is a few hundred bytes; correctness wins.
+    ///
+    /// `body` runs under the lock, so it must not call back into this store.
     public func mutate(_ body: (inout PersistedState) -> Void) {
         lock.lock()
+        defer { lock.unlock() }
         body(&state)
-        let copy = state
-        lock.unlock()
-        try? file.save(copy)
+        try? file.save(state)
     }
 }

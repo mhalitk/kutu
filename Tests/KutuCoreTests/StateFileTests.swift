@@ -10,6 +10,11 @@ private func tempPath() -> String {
         .appendingPathComponent("state.json").path
 }
 
+private func windowRef(_ id: WindowID) -> WindowRef {
+    WindowRef(id: id, pid: 1, bundleID: "b", appName: "A", title: "t",
+              frame: .zero, isFullScreen: false)
+}
+
 @Test func loadingAbsentFileYieldsEmptyState() {
     let store = StateFile(path: tempPath())
     let state = store.load()
@@ -59,7 +64,7 @@ private func tempPath() -> String {
     #expect(onDisk.membership == store.membership)
 }
 
-@Test func concurrentWritersDoNotClobberEachOther() throws {
+@Test func writesToDifferentFieldsCompose() throws {
     let path = tempPath()
     let store = StateStore(file: StateFile(path: path))
     // Mimics Parker and Switcher writing different fields of the same file.
@@ -68,9 +73,30 @@ private func tempPath() -> String {
 
     let onDisk = StateFile(path: path).load()
     #expect(onDisk.parkedFrames["7"] == CGRect(x: 1, y: 2, width: 3, height: 4))
-    #expect(onDisk.membership.tier(of: WindowRef(id: 9, pid: 1, bundleID: "b", appName: "A",
-                                                 title: "t", frame: .zero, isFullScreen: false),
-                                   pinnedBundleIDs: []) == .boxed("beta"))
+    #expect(onDisk.membership.tier(of: windowRef(9), pinnedBundleIDs: []) == .boxed("beta"))
+}
+
+@Test func concurrentWritersDoNotClobberEachOther() throws {
+    // A real interleaving test: with the save outside the lock, two writers'
+    // atomic renames can land out of order and drop a mutation. Every one of
+    // these 50 writes must survive to disk.
+    let path = tempPath()
+    let store = StateStore(file: StateFile(path: path))
+
+    DispatchQueue.concurrentPerform(iterations: 50) { index in
+        if index.isMultiple(of: 2) {
+            store.mutate { $0.parkedFrames["\(index)"] = CGRect(x: CGFloat(index), y: 0, width: 1, height: 1) }
+        } else {
+            store.mutate { $0.membership.assign(WindowID(index), to: "box-\(index)") }
+        }
+    }
+
+    let onDisk = StateFile(path: path).load()
+    #expect(onDisk.parkedFrames.count == 25)
+    for index in stride(from: 1, to: 50, by: 2) {
+        #expect(onDisk.membership.tier(of: windowRef(WindowID(index)),
+                                       pinnedBundleIDs: []) == .boxed("box-\(index)"))
+    }
 }
 
 @Test func storeStartsFromWhateverIsOnDisk() throws {
