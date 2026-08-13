@@ -82,6 +82,8 @@ case "ls":
     print(Membership.lobby)
 
 default:
+    // Unknown subcommand is an error, not a help request — a script checking
+    // exit codes must not read a typo as success.
     print(usage)
-    exit(arguments.isEmpty ? 1 : 0)
+    exit(1)
 }

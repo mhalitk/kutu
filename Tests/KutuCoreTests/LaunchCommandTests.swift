@@ -36,5 +36,29 @@ import Testing
     let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/it's")
     let script = command?.arguments.joined(separator: " ") ?? ""
     #expect(!script.contains("cd '/w/it's'"))
-    #expect(script.contains("it'\\''s"))
+    // The shell-layer escape ('\'') contains a backslash, which the outer
+    // AppleScript layer then doubles so the literal decodes back to a single
+    // backslash — verified against `osascript` directly. The doubled form is
+    // what the generated AppleScript SOURCE actually contains.
+    #expect(script.contains("it'\\\\''s"))
+}
+
+@Test func doubleQuotesCannotEscapeTheAppleScriptLiteral() {
+    // A bare double quote would close the AppleScript string early and let the
+    // rest be parsed as AppleScript source. The payload text still appears in
+    // the script — harmlessly, inside the literal — so what must be asserted
+    // is that every quote survives ESCAPED, never that the text is absent.
+    let hostile = "/w/a\" & (do shell script \"echo pwned\") & \""
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: hostile)
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(!script.contains("a\" &"))     // would have closed the literal
+    #expect(script.contains("a\\\" &"))    // escaped, so it cannot
+}
+
+@Test func aCommandKeepsItsOwnSingleQuotes() {
+    // `cmd` is a shell command line, not a value inside quotes. Shell-escaping
+    // it would corrupt a perfectly legitimate command.
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "say it's done"), in: "/w/a")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(script.contains("say it's done"))
 }
