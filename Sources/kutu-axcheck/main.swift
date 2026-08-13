@@ -184,6 +184,66 @@ Check.run("observes a closed window") {
 
 registry.stop()
 
+Check.emit("=== Switcher ===")
+
+let switchFiles = (0..<2).map { scratch.appendingPathComponent("switch-\($0).txt") }
+for file in switchFiles { try? "kutu".write(to: file, atomically: true, encoding: .utf8) }
+let openSwitch = Process()
+openSwitch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openSwitch.arguments = ["-a", "TextEdit"] + switchFiles.map(\.path)
+try? openSwitch.run()
+openSwitch.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+let switchRegistry = WindowRegistry()
+switchRegistry.start()
+switchRegistry.refresh()
+
+let switchStatePath = scratch.appendingPathComponent("switch-state.json").path
+let switchStore = StateStore(file: StateFile(path: switchStatePath))
+let switchParker = Parker(resolver: switchRegistry, store: switchStore)
+let switcher = Switcher(registry: switchRegistry, parker: switchParker,
+                        store: switchStore, config: KutuConfig())
+
+let editorWindows = switchRegistry.windows.filter { $0.bundleID == "com.apple.TextEdit" }
+
+Check.run("two windows available to box up") {
+    (editorWindows.count >= 2, "found \(editorWindows.count)")
+}
+
+switcher.assign(editorWindows[0].id, to: "alpha")
+switcher.assign(editorWindows[1].id, to: "beta")
+
+Check.run("switching to alpha hides beta's window") {
+    switcher.switchTo("alpha")
+    Thread.sleep(forTimeInterval: 0.4)
+    return (switchParker.isParked(editorWindows[1].id) && !switchParker.isParked(editorWindows[0].id),
+            "alpha parked=\(switchParker.isParked(editorWindows[0].id)) beta parked=\(switchParker.isParked(editorWindows[1].id))")
+}
+
+Check.run("switching to beta reverses it") {
+    switcher.switchTo("beta")
+    Thread.sleep(forTimeInterval: 0.4)
+    return (switchParker.isParked(editorWindows[0].id) && !switchParker.isParked(editorWindows[1].id), "")
+}
+
+Check.run("active box survives a restart") {
+    let reloaded = StateFile(path: switchStatePath).load()
+    return (reloaded.activeBox == "beta", "got \(reloaded.activeBox)")
+}
+
+Check.run("lobby shows unclassified windows") {
+    switcher.switchTo(Membership.lobby)
+    Thread.sleep(forTimeInterval: 0.4)
+    return (switchParker.isParked(editorWindows[0].id) && switchParker.isParked(editorWindows[1].id),
+            "boxed windows must hide in lobby")
+}
+
+switcher.switchTo("alpha")
+switchParker.unparkAll()
+switchRegistry.stop()
+closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h. Closing a window
