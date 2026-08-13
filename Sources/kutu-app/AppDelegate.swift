@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var palette: PaletteWindow!
     private var activationGuard: ActivationGuard!
     private var hotKey: HotKey?
+    private var statusServer: StatusServer!
+    private var launcher: Launcher!
     private let tracker = StatusTracker()
     private var config = KutuConfig()
 
@@ -74,6 +76,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activationGuard.onWantsSwitch = { [weak self] box in self?.switchTo(box) }
         activationGuard.start()
 
+        launcher = Launcher(assigner: assigner)
+        statusServer = StatusServer(path: StatusServer.defaultPath) { [weak self] payload in
+            self?.handle(payload)
+        }
+        do {
+            try statusServer.start()
+        } catch {
+            NSLog("kutu: status socket unavailable: \(error)")
+        }
+
         registry.start()
 
         refreshUI()
@@ -88,6 +100,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activationGuard?.suppress(for: 1.0)
         switcher.switchTo(box)
         refreshUI()
+    }
+
+    /// One socket carries both control commands and status reports. Control
+    /// messages are the ones carrying a "kutu" key; everything else is offered
+    /// to the status decoder, so third-party payloads need no wrapper.
+    private func handle(_ payload: Data) {
+        if let control = try? JSONDecoder().decode(ControlMessage.self, from: payload) {
+            switch control.kutu {
+            case "switch":
+                if let box = control.arg { switchTo(box) }
+                return
+            case "open":
+                guard let box = control.arg else { return }
+                if let spec = config.boxes.first(where: { $0.name == box }) {
+                    launcher.hydrate(box: spec)
+                }
+                switchTo(box)
+                return
+            case "panic":
+                parker.unparkAll()
+                refreshUI()
+                return
+            default:
+                break   // "status" falls through to the decoder below
+            }
+        }
+        if let report = StatusDecoder.decode(payload) {
+            tracker.apply(report)
+            refreshUI()
+        }
     }
 
     private func showPalette() {
