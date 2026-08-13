@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import KutuCore
 import KutuMac
 
@@ -58,4 +59,96 @@ Check.run("reads a position for every window") {
     return (bad.isEmpty, "\(bad.count) unreadable")
 }
 
+Check.emit("=== Parker ===")
+
+// Two real windows to abuse, created deterministically rather than by
+// borrowing whatever the user happens to have open.
+let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("kutu-axcheck")
+try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+let files = (0..<2).map { scratch.appendingPathComponent("park-\($0).txt") }
+for file in files { try? "kutu".write(to: file, atomically: true, encoding: .utf8) }
+
+let opener = Process()
+opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+opener.arguments = ["-a", "TextEdit"] + files.map(\.path)
+try? opener.run()
+opener.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+func textEditWindows() -> [ManagedWindow] {
+    AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" }
+}
+
+Check.run("stage manager is off") {
+    (!StageManagerGuard.isEnabled, StageManagerGuard.isEnabled ? "disable it in Desktop & Dock" : "")
+}
+
+Check.run("opened two TextEdit windows") {
+    (textEditWindows().count >= 2, "found \(textEditWindows().count)")
+}
+
+let resolver = SnapshotResolver(windows: textEditWindows())
+let parkerStore = StateStore(file: StateFile(path: scratch.appendingPathComponent("state.json").path))
+let parker = Parker(resolver: resolver, store: parkerStore)
+let victims = textEditWindows()
+let originalFrames = Dictionary(uniqueKeysWithValues: victims.map { ($0.ref.id, $0.ref.frame) })
+
+Check.run("parks every window off-screen") {
+    for window in victims { _ = parker.park(window.ref) }
+    Thread.sleep(forTimeInterval: 0.3)
+    let visible = NSScreen.screens.first?.frame ?? .zero
+    let stillVisible = textEditWindows().filter { $0.ref.frame.minX < visible.maxX - 100 }
+    return (stillVisible.isEmpty, "\(stillVisible.count) still on screen")
+}
+
+Check.run("restores every frame exactly") {
+    for window in victims { _ = parker.unpark(window.ref.id) }
+    Thread.sleep(forTimeInterval: 0.3)
+    var wrong: [String] = []
+    for window in textEditWindows() {
+        guard let want = originalFrames[window.ref.id] else { continue }
+        if abs(window.ref.frame.minX - want.minX) > 1 || abs(window.ref.frame.minY - want.minY) > 1 {
+            wrong.append("\(window.ref.id) want \(want.origin) got \(window.ref.frame.origin)")
+        }
+    }
+    return (wrong.isEmpty, wrong.joined(separator: "; "))
+}
+
+Check.run("unparkAll rescues windows after a simulated crash") {
+    for window in victims { _ = parker.park(window.ref) }
+    Thread.sleep(forTimeInterval: 0.3)
+    // A fresh Parker with no memory, exactly like a relaunch after a crash.
+    // Parker.resolver is weak, so the resolver needs a strong local owner —
+    // otherwise it deallocates the instant init() returns and every
+    // element(for:) lookup silently returns nil.
+    let revivedResolver = SnapshotResolver(windows: textEditWindows())
+    let revived = Parker(resolver: revivedResolver,
+                         store: StateStore(file: StateFile(path: scratch.appendingPathComponent("state.json").path)))
+    revived.unparkAll()
+    Thread.sleep(forTimeInterval: 0.3)
+    let visible = NSScreen.screens.first?.frame ?? .zero
+    let stranded = textEditWindows().filter { $0.ref.frame.minX > visible.maxX - 100 }
+    return (stranded.isEmpty, "\(stranded.count) stranded")
+}
+
+// kAXCloseAction does not exist in AXActionConstants.h; closing a window via AX
+// means pressing its close button, per Apple's documented pattern.
+for window in textEditWindows() {
+    var button: CFTypeRef?
+    if AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString, &button) == .success,
+       let button, CFGetTypeID(button) == AXUIElementGetTypeID() {
+        AXUIElementPerformAction((button as! AXUIElement), kAXPressAction as CFString)
+    }
+}
+
 Check.finish()
+
+/// Resolves elements from a fixed snapshot — enough for the harness, which
+/// knows exactly which windows it created.
+final class SnapshotResolver: WindowResolving {
+    private let map: [WindowID: AXUIElement]
+    init(windows: [ManagedWindow]) {
+        map = Dictionary(uniqueKeysWithValues: windows.map { ($0.ref.id, $0.element) })
+    }
+    func element(for id: WindowID) -> AXUIElement? { map[id] }
+}
