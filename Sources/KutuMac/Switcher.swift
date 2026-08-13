@@ -54,8 +54,18 @@ public final class Switcher {
 
     /// Called when a window closes. Without this, assignments for dead windows
     /// accumulate forever and window ids are eventually reused by macOS.
+    ///
+    /// The parked frame goes too. The window is gone, so the frame describes
+    /// nothing — and leaving it behind is actively harmful once macOS reuses
+    /// the id: `Parker.isParked` would report a brand-new window as already
+    /// parked, so parking it silently no-ops (it stays visible when it should
+    /// hide) or unparking it applies a dead window's frame (it jumps somewhere
+    /// unexpected).
     public func forget(_ id: WindowID) {
-        store.mutate { $0.membership.forget(id) }
+        store.mutate {
+            $0.membership.forget(id)
+            $0.parkedFrames.removeValue(forKey: String(id))
+        }
     }
 
     public func switchTo(_ box: String) {

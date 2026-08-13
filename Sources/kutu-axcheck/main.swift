@@ -239,6 +239,37 @@ Check.run("lobby shows unclassified windows") {
             "boxed windows must hide in lobby")
 }
 
+Check.emit("=== Assigner ===")
+
+let assigner = Assigner(switcher: switcher)
+
+Check.run("a claimed window joins the claiming box, not the active one") {
+    guard let window = editorWindows.first else { return (false, "no window") }
+    switcher.switchTo("alpha")
+    assigner.claimNextWindows(for: "gamma", seconds: 10)
+    assigner.windowAppeared(window)
+    let box = switcher.membership.boxName(for: window, pinnedBundleIDs: [])
+    return (box == "gamma", "got \(box)")
+}
+
+Check.run("an expired claim falls back to the active box") {
+    guard let window = editorWindows.first else { return (false, "no window") }
+    assigner.claimNextWindows(for: "gamma", seconds: 0)
+    switcher.switchTo("alpha")
+    assigner.windowAppeared(window)
+    let box = switcher.membership.boxName(for: window, pinnedBundleIDs: [])
+    return (box == "alpha", "got \(box)")
+}
+
+Check.run("a window appearing while lobby is active stays loose") {
+    guard let window = editorWindows.last else { return (false, "no window") }
+    switcher.forget(window.id)
+    switcher.switchTo(Membership.lobby)
+    assigner.windowAppeared(window)
+    let box = switcher.membership.boxName(for: window, pinnedBundleIDs: [])
+    return (box == Membership.lobby, "got \(box)")
+}
+
 switcher.switchTo("alpha")
 switchParker.unparkAll()
 switchRegistry.stop()
