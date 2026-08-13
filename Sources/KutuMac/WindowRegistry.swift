@@ -12,6 +12,7 @@ public final class WindowRegistry: NSObject, WindowResolving {
     private var observers: [pid_t: AXObserver] = [:]
     private var running = false
     private var isRefreshing = false
+    private var hasSwept = false
 
     public var windows: [KutuWindow] { byID.values.map(\.ref) }
 
@@ -56,15 +57,29 @@ public final class WindowRegistry: NSObject, WindowResolving {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        // `onWindowAdded` means "appeared", not "seen for the first time by
+        // this process". The initial sweep discovers every window already open,
+        // and those carry persisted box membership — adopting them into the
+        // active box would silently collapse every box into one.
+        let isInitialSweep = !hasSwept
+        hasSwept = true
+
         let current = AXBridge.allStandardWindows()
         let currentIDs = Set(current.map(\.ref.id))
         let knownIDs = Set(byID.keys)
+        let liveIDs = AXBridge.liveWindowIDs()
 
         for window in current where !knownIDs.contains(window.ref.id) {
             byID[window.ref.id] = window
-            onWindowAdded?(window.ref)
+            if !isInitialSweep { onWindowAdded?(window.ref) }
         }
         for id in knownIDs.subtracting(currentIDs) {
+            // Absence from the Accessibility sweep is not death: an app blocked
+            // past the messaging timeout vanishes from the sweep while its
+            // windows still exist. Deleting a parked window's saved frame on
+            // that evidence strands it permanently, so only the window server
+            // settles it.
+            guard !liveIDs.contains(id) else { continue }
             byID.removeValue(forKey: id)
             onWindowRemoved?(id)
         }

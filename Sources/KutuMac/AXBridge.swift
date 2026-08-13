@@ -106,6 +106,15 @@ public enum AXBridge {
         }
     }
 
+    /// The window server's own inventory. Unlike the Accessibility sweep it
+    /// does not depend on an application being responsive, so it is the only
+    /// trustworthy answer to "does this window still exist?".
+    public static func liveWindowIDs() -> Set<WindowID> {
+        let info = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
+                                               kCGNullWindowID) as? [[String: Any]]) ?? []
+        return Set(info.compactMap { $0["kCGWindowNumber"] as? WindowID })
+    }
+
     /// Every managed window on the system. Finder is excluded because its
     /// "window" list includes the desktop, which must never be touched.
     public static func allStandardWindows() -> [ManagedWindow] {
