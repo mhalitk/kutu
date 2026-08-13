@@ -89,17 +89,26 @@ public final class WindowRegistry: NSObject, WindowResolving {
     @objc private func appLaunched(_ note: Notification) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.activationPolicy == .regular else { return }
-        // Applications are not immediately ready to answer AX queries.
+        // Applications are not immediately ready to answer AX queries, so this
+        // is deferred — which means `stop()` can win the race. Re-check, or a
+        // launch arriving during shutdown resurrects an observer on a registry
+        // that is supposed to be dead.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.observe(app)
-            self?.refresh()
+            guard let self, self.running else { return }
+            self.observe(app)
+            self.refresh()
         }
     }
 
     @objc private func appTerminated(_ note: Notification) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         else { return }
-        observers.removeValue(forKey: app.processIdentifier)
+        // Drop the run loop source explicitly rather than relying on the Mach
+        // port dying: same reasoning as `stop()`, and it keeps teardown uniform.
+        if let observer = observers.removeValue(forKey: app.processIdentifier) {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(),
+                                  AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
         refresh()
     }
 }
