@@ -263,11 +263,21 @@ Check.run("an expired claim falls back to the active box") {
 
 Check.run("a window appearing while lobby is active stays loose") {
     guard let window = editorWindows.last else { return (false, "no window") }
+    // Make the window visible BEFORE forgetting it. `forget` drops the saved
+    // frame, and dropping it while the window is still parked strands it
+    // off-screen with no record of where it belongs — the very hazard this
+    // task fixed. Production only calls forget on window-close, where position
+    // no longer matters; the harness must not exercise it outside that
+    // contract.
+    switcher.switchTo("beta")
     switcher.forget(window.id)
     switcher.switchTo(Membership.lobby)
     assigner.windowAppeared(window)
     let box = switcher.membership.boxName(for: window, pinnedBundleIDs: [])
-    return (box == Membership.lobby, "got \(box)")
+    // Assert position too, not just membership: asserting the box name alone
+    // would let a stranded window pass.
+    return (box == Membership.lobby && !switchParker.isParked(window.id),
+            "box \(box), parked \(switchParker.isParked(window.id))")
 }
 
 switcher.switchTo("alpha")
