@@ -66,8 +66,9 @@ active join that box. Pinned applications stay visible in every box.
 
 ## If something goes wrong
 
-"Unpark everything" in the menu bar restores every hidden window. kutu also
-unparks on quit and reconciles at launch, so a crash cannot strand a window.
+A crash leaves your windows recoverable: kutu reconciles at launch, restoring
+anything that belongs in the active box, and "Unpark everything" restores the
+rest.
 
 ## Tests
 
