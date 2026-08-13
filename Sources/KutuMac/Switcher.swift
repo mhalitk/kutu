@@ -78,10 +78,14 @@ public final class Switcher {
 
         for id in plan.toPark {
             guard let ref = byID[id] else { continue }
-            _ = parker.park(ref)
+            if !parker.park(ref) {
+                NSLog("kutu: could not park window \(id) (\(ref.appName))")
+            }
         }
         for id in plan.toUnpark {
-            _ = parker.unpark(id)
+            if !parker.unpark(id) && parker.isParked(id) {
+                NSLog("kutu: could not unpark window \(id)")
+            }
         }
 
         store.mutate { $0.activeBox = box }
