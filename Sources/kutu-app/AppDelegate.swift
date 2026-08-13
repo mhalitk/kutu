@@ -17,8 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let tracker = StatusTracker()
     private var config = KutuConfig()
 
-    static let configPath = (NSHomeDirectory() as NSString)
-        .appendingPathComponent(".config/kutu/boxes.toml")
+    static let configPath = KutuPaths.config
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard AXBridge.isTrusted else {
@@ -95,6 +94,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          pinnedBundleIDs: Set(config.pinnedBundleIDs),
                          windows: registry.windows)
 
+        // Terminate unparks everything, so the saved box's containment has to
+        // be re-established or the UI claims a box while every window is
+        // visible. Safe only because C1 no longer rewrites membership here.
+        if switcher.activeBox != Membership.lobby {
+            switchTo(switcher.activeBox)
+        }
+
         refreshUI()
     }
 
@@ -121,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func switchTo(_ box: String) {
         switcher.switchTo(box)
+        assigner.boxChanged(to: box)
         // Suppression starts AFTER the switch, not before. Parking and
         // unparking is synchronous Accessibility work that can take a
         // meaningful slice of a second under load; starting the clock first
@@ -152,6 +159,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 parker.unparkAll()
                 refreshUI()
                 return
+            case "status":
+                if control.state == nil, let box = control.arg {
+                    tracker.clearAll(forBox: box,
+                                     directory: config.boxes.first { $0.name == box }?.dir)
+                    refreshUI()
+                    return
+                }
             default:
                 break   // "status" falls through to the decoder below
             }

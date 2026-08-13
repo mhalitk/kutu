@@ -110,6 +110,26 @@ public final class StatusTracker: @unchecked Sendable {
         reports.removeValue(forKey: key)
     }
 
+    /// Drops every report against a box, whatever reported it. The escape hatch
+    /// for a reporter that died without retracting — a session killed with
+    /// SIGKILL never sends its SessionEnd, and its status would otherwise pin
+    /// the box lit until kutu restarts.
+    public func clearAll(forBox name: String, directory: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        let base = directory.map(Self.withoutTrailingSlash)
+        reports = reports.filter { _, report in
+            switch report.scope {
+            case .box(let boxName):
+                return boxName != name
+            case .directory(let dir):
+                guard let base else { return true }
+                let reported = Self.withoutTrailingSlash(dir)
+                return !(reported == base || reported.hasPrefix(base + "/"))
+            }
+        }
+    }
+
     /// `directory` is the box's working directory when it has one. Reports
     /// scoped to that directory, or anywhere inside it, count toward the box,
     /// which is what happens with monorepos and worktrees.

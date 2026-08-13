@@ -18,6 +18,13 @@ public final class Assigner {
         claimExpiry = Date().addingTimeInterval(seconds)
     }
 
+    /// A claim is an expectation about windows the box we just launched is
+    /// about to open. Once the user switches somewhere else that expectation is
+    /// void, and honouring it would file their next window under the wrong box.
+    public func boxChanged(to box: String) {
+        if let claim = claimBox, claim != box { claimBox = nil }
+    }
+
     public func windowAppeared(_ ref: KutuWindow) {
         if let box = claimBox, Date() < claimExpiry {
             switcher.assign(ref.id, to: box)
