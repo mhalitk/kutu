@@ -13,10 +13,19 @@ public struct PaletteRow: Sendable, Equatable {
     }
 }
 
+/// A borderless window returns `canBecomeKey == false`, which would leave the
+/// filter field unable to receive a single keystroke. Verified on this SDK.
+/// `.nonactivatingPanel` is what lets it take keyboard input *without*
+/// activating kutu, so overriding this keeps the palette usable while still
+/// leaving the frontmost application untouched.
+final class PalettePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 /// A non-activating overlay: showing it must not change which application is
 /// frontmost, or the switch it triggers would land in the wrong place.
 public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
-    private let panel: NSPanel
+    private let panel: PalettePanel
     private let field = NSTextField()
     private let table = NSTableView()
     private let scroll = NSScrollView()
@@ -26,9 +35,9 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     private var onPick: ((String) -> Void)?
 
     public override init() {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        panel = PalettePanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+                             styleMask: [.borderless, .nonactivatingPanel],
+                             backing: .buffered, defer: false)
         super.init()
 
         panel.level = .modalPanel
@@ -98,7 +107,9 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
                 x: screen.frame.midX - size.width / 2,
                 y: screen.frame.midY - size.height / 2 + 80))
         }
-        panel.orderFrontRegardless()
+        // Key, not merely front: ordering a window forward does not give it
+        // keyboard focus, and the palette is useless without it.
+        panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
     }
 
