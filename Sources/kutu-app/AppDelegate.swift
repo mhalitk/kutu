@@ -29,16 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switcher = Switcher(registry: registry, parker: parker, store: store, config: config)
         assigner = Assigner(switcher: switcher)
 
-        registry.onWindowAdded = { [weak self] ref in
-            self?.assigner.windowAppeared(ref)
-            self?.refreshUI()
-        }
-        registry.onWindowRemoved = { [weak self] id in
-            self?.switcher.forget(id)
-            self?.refreshUI()
-        }
-        registry.start()
-
+        // The UI is built BEFORE the registry starts. `start()` sweeps
+        // immediately and fires onWindowAdded for every window already open,
+        // and those callbacks reach refreshUI — which would find `mask` and
+        // `menuBar` still nil and trap on the implicit unwrap. Starting the
+        // registry is therefore the last thing this method does.
         mask = SliverMask()
         mask.show()
 
@@ -50,8 +45,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshUI()
         }
         menuBar.onQuit = { NSApp.terminate(nil) }
-
         switcher.onChange = { [weak self] in self?.refreshUI() }
+
+        registry.onWindowAdded = { [weak self] ref in
+            self?.assigner.windowAppeared(ref)
+            self?.refreshUI()
+        }
+        registry.onWindowRemoved = { [weak self] id in
+            self?.switcher.forget(id)
+            self?.refreshUI()
+        }
+        registry.start()
+
         refreshUI()
     }
 
@@ -66,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshUI() {
+        // Registry callbacks can arrive before the UI exists and after it is
+        // torn down, so this tolerates a half-built delegate rather than
+        // relying on call ordering alone.
+        guard let mask, let menuBar else { return }
         let box = switcher.activeBox
         mask.setLabel(box, state: tracker.state(forBox: box,
                                                 directory: config.boxes.first { $0.name == box }?.dir))
