@@ -17,15 +17,13 @@ public struct PersistedState: Sendable, Codable, Equatable {
 }
 
 public struct StateFile: Sendable {
-    private let path: String
+    public let path: String
 
     public init(path: String) {
         self.path = path
     }
 
-    public static var defaultPath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".local/state/kutu/state.json")
-    }
+    public static var defaultPath: String { KutuPaths.stateFile }
 
     /// Never throws: a missing or corrupt state file must not stop kutu from
     /// starting, because starting is what lets the user unpark their windows.
@@ -76,10 +74,17 @@ public final class StateStore: @unchecked Sendable {
     /// user cannot reach. The file is a few hundred bytes; correctness wins.
     ///
     /// `body` runs under the lock, so it must not call back into this store.
-    public func mutate(_ body: (inout PersistedState) -> Void) {
+    @discardableResult
+    public func mutate(_ body: (inout PersistedState) -> Void) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         body(&state)
-        try? file.save(state)
+        do {
+            try file.save(state)
+            return true
+        } catch {
+            NSLog("kutu: could not persist state to \(file.path): \(error)")
+            return false
+        }
     }
 }

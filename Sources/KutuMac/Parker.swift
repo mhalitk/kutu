@@ -43,7 +43,10 @@ public final class Parker {
 
         // Record before moving: if kutu dies between the two, recovery still
         // knows where the window belongs. The reverse order can lose it.
-        store.mutate { $0.parkedFrames[String(ref.id)] = ref.frame }
+        guard store.mutate({ $0.parkedFrames[String(ref.id)] = ref.frame }) else {
+            NSLog("kutu: refusing to park \(ref.id) — its frame could not be saved")
+            return false
+        }
         guard AXBridge.setPosition(element, Parker.parkPoint) else {
             store.mutate { $0.parkedFrames.removeValue(forKey: String(ref.id)) }
             return false
@@ -86,13 +89,7 @@ public final class Parker {
                           pinnedBundleIDs: Set<String>,
                           windows: [KutuWindow]) {
         let byID = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0) })
-
-        // The window server's own inventory. Unlike the Accessibility sweep it
-        // does not depend on an application being responsive, which matters
-        // below.
-        let liveIDs = Set(((CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
-                                                       kCGNullWindowID) as? [[String: Any]]) ?? [])
-            .compactMap { $0["kCGWindowNumber"] as? UInt32 })
+        let liveIDs = AXBridge.liveWindowIDs()
 
         for key in store.parkedFrames.keys {
             guard let id = WindowID(key) else {
