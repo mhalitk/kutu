@@ -118,9 +118,8 @@ Check.run("unparkAll rescues windows after a simulated crash") {
     for window in victims { _ = parker.park(window.ref) }
     Thread.sleep(forTimeInterval: 0.3)
     // A fresh Parker with no memory, exactly like a relaunch after a crash.
-    // Parker.resolver is weak, so the resolver needs a strong local owner —
-    // otherwise it deallocates the instant init() returns and every
-    // element(for:) lookup silently returns nil.
+    // Bind the resolver to a local first: an inline temporary would be released
+    // before use, and every unpark would silently no-op.
     let revivedResolver = SnapshotResolver(windows: textEditWindows())
     let revived = Parker(resolver: revivedResolver,
                          store: StateStore(file: StateFile(path: scratch.appendingPathComponent("state.json").path)))
@@ -131,17 +130,22 @@ Check.run("unparkAll rescues windows after a simulated crash") {
     return (stranded.isEmpty, "\(stranded.count) stranded")
 }
 
-// kAXCloseAction does not exist in AXActionConstants.h; closing a window via AX
-// means pressing its close button, per Apple's documented pattern.
-for window in textEditWindows() {
-    var button: CFTypeRef?
-    if AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString, &button) == .success,
-       let button, CFGetTypeID(button) == AXUIElementGetTypeID() {
-        AXUIElementPerformAction((button as! AXUIElement), kAXPressAction as CFString)
-    }
-}
+closeAll(textEditWindows())
 
 Check.finish()
+
+/// `kAXCloseAction` does not exist in AXActionConstants.h. Closing a window
+/// through Accessibility means pressing its close button, per Apple's pattern.
+func closeAll(_ windows: [ManagedWindow]) {
+    for window in windows {
+        var button: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString,
+                                         &button) == .success,
+           let button, CFGetTypeID(button) == AXUIElementGetTypeID() {
+            AXUIElementPerformAction((button as! AXUIElement), kAXPressAction as CFString)
+        }
+    }
+}
 
 /// Resolves elements from a fixed snapshot — enough for the harness, which
 /// knows exactly which windows it created.

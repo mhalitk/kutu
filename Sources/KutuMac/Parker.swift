@@ -14,7 +14,12 @@ public final class Parker {
     /// fragment. The top-left equivalent leaves a full-height 40px strip.
     public static let parkPoint = CGPoint(x: 60000, y: 60000)
 
-    private weak var resolver: (any WindowResolving)?
+    /// Held strongly and deliberately. Nothing in the dependency graph points
+    /// back at Parker (WindowRegistry never references it), so there is no
+    /// cycle to break — and a dropped resolver would silently turn `park` and
+    /// `unpark` into no-ops, which fails in exactly the direction that strands
+    /// windows.
+    private let resolver: any WindowResolving
     private let store: StateStore
 
     public init(resolver: any WindowResolving, store: StateStore) {
@@ -34,7 +39,7 @@ public final class Parker {
     public func park(_ ref: KutuWindow) -> Bool {
         guard !StageManagerGuard.isEnabled else { return false }
         guard !ref.isFullScreen else { return false }
-        guard !isParked(ref.id), let element = resolver?.element(for: ref.id) else { return false }
+        guard !isParked(ref.id), let element = resolver.element(for: ref.id) else { return false }
 
         // Record before moving: if kutu dies between the two, recovery still
         // knows where the window belongs. The reverse order can lose it.
@@ -49,7 +54,7 @@ public final class Parker {
     @discardableResult
     public func unpark(_ id: WindowID) -> Bool {
         guard let frame = store.parkedFrames[String(id)],
-              let element = resolver?.element(for: id) else { return false }
+              let element = resolver.element(for: id) else { return false }
         let moved = AXBridge.setPosition(element, frame.origin)
         if moved {
             AXBridge.raise(element)
@@ -60,10 +65,16 @@ public final class Parker {
 
     /// The safety valve. Restores every window kutu believes it has parked,
     /// including ones parked by a previous, crashed run.
+    ///
+    /// Deliberately does NOT clear `parkedFrames` wholesale afterwards.
+    /// `unpark` already removes each entry it succeeds on, so a blanket
+    /// `removeAll()` would discard the saved frame of any window that FAILED
+    /// to unpark — destroying the only record of where that window belongs and
+    /// stranding it off-screen permanently. Failures must keep their frames so
+    /// a later attempt, or `reconcile` at next launch, can still recover them.
     public func unparkAll() {
         for key in store.parkedFrames.keys {
             if let id = WindowID(key) { _ = unpark(id) }
         }
-        store.mutate { $0.parkedFrames.removeAll() }
     }
 }
