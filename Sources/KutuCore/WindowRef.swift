@@ -1,8 +1,9 @@
 import Foundation
+import CoreGraphics
 
 public typealias WindowID = UInt32
 
-public struct WindowRef: Sendable, Identifiable {
+public struct WindowRef: Sendable, Hashable, Identifiable {
     public let id: WindowID
     public let pid: pid_t
     public let bundleID: String

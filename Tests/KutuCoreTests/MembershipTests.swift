@@ -1,10 +1,11 @@
 import Testing
 import Foundation
+import CoreGraphics
 @testable import KutuCore
 
 private func ref(_ id: WindowID, bundle: String = "com.example.app") -> WindowRef {
     WindowRef(id: id, pid: 1, bundleID: bundle, appName: "App", title: "t",
-              frame: CGRect(origin: CGPoint(x: 0, y: 0), size: CGSize(width: 100, height: 100)), isFullScreen: false)
+              frame: CGRect(x: 0, y: 0, width: 100, height: 100), isFullScreen: false)
 }
 
 @Test func unassignedWindowIsLoose() {
