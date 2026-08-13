@@ -69,6 +69,14 @@ public final class StatusServer {
         guard client >= 0 else { return }
         defer { close(client) }
 
+        // This socket carries control commands as well as status, and GCD will
+        // not re-enter a single source's handler concurrently. A client that
+        // connects and never writes would therefore stall every later
+        // connection — including `kutu go`. Bound the read instead.
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   socklen_t(MemoryLayout<timeval>.size))
+
         var payload = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while true {

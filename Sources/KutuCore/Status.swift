@@ -116,18 +116,28 @@ public final class StatusTracker: @unchecked Sendable {
     public func state(forBox name: String, directory: String?) -> Status? {
         lock.lock()
         defer { lock.unlock() }
-        let root = directory.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        // Both sides are stripped of a trailing separator before comparing.
+        // `BoxSpec.dir` comes from user-authored TOML, so a box may be written
+        // as "~/w/a/" while a reporter's cwd arrives as "/w/a" — comparing raw
+        // strings would silently fail to match a box against its own root
+        // directory, the single most common place a report comes from.
+        let base = directory.map(Self.withoutTrailingSlash)
         return reports.values
             .filter { report in
                 switch report.scope {
                 case .box(let boxName):
                     return boxName == name
                 case .directory(let dir):
-                    guard let directory, let root else { return false }
-                    return dir == directory || dir.hasPrefix(root)
+                    guard let base else { return false }
+                    let reported = Self.withoutTrailingSlash(dir)
+                    return reported == base || reported.hasPrefix(base + "/")
                 }
             }
             .compactMap(\.state)
             .min { $0.urgency < $1.urgency }
+    }
+
+    private static func withoutTrailingSlash(_ path: String) -> String {
+        path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 }

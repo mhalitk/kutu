@@ -36,6 +36,22 @@ private func data(_ json: String) -> Data { Data(json.utf8) }
     #expect(tracker.state(forBox: "a", directory: "/w/a") == .waiting)
 }
 
+@Test func boxDirectoryWithATrailingSlashStillMatchesItsOwnRoot() {
+    // BoxSpec.dir is user-authored TOML and may carry a trailing slash, while a
+    // reporter's cwd normally does not. The box's own root is the commonest
+    // report location, so this must match.
+    let tracker = StatusTracker()
+    tracker.apply(StatusReport(key: "s1", scope: .directory("/w/a"), state: .waiting))
+    #expect(tracker.state(forBox: "a", directory: "/w/a/") == .waiting)
+    #expect(tracker.state(forBox: "a", directory: "/w/a") == .waiting)
+}
+
+@Test func trailingSlashDoesNotWidenMatchingToSiblings() {
+    let tracker = StatusTracker()
+    tracker.apply(StatusReport(key: "s1", scope: .directory("/w/abc"), state: .waiting))
+    #expect(tracker.state(forBox: "a", directory: "/w/a/") == nil)
+}
+
 @Test func siblingDirectoryWithASharedPrefixIsIgnored() {
     let tracker = StatusTracker()
     tracker.apply(StatusReport(key: "s1", scope: .directory("/w/abc"), state: .waiting))
