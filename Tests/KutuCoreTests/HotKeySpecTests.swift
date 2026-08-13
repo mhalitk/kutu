@@ -23,3 +23,16 @@ import Testing
 @Test func rejectsSpecWithoutModifier() {
     #expect(HotKeySpec.parse("space") == nil)
 }
+
+@Test func rejectsSpecWhoseModifiersAreAllUnrecognised() {
+    // "fn" is not a registerable Carbon modifier. Accepting it would register
+    // an unmodified global Space and swallow the space bar system-wide.
+    #expect(HotKeySpec.parse("fn+space") == nil)
+    #expect(HotKeySpec.parse("foo+space") == nil)
+}
+
+@Test func toleratesWhitespaceAroundTokens() {
+    let spec = HotKeySpec.parse(" alt + space ")
+    #expect(spec?.keyCode == 49)
+    #expect(spec?.usesOption == true)
+}

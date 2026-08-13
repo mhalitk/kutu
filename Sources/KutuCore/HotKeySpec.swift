@@ -21,15 +21,27 @@ public struct HotKeySpec: Sendable, Equatable {
     ]
 
     public static func parse(_ spec: String) -> HotKeySpec? {
-        let parts = spec.lowercased().split(separator: "+").map(String.init)
+        let parts = spec.lowercased()
+            .split(separator: "+")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
         guard let key = parts.last, let code = keyCodes[key] else { return nil }
+
         let modifiers = Set(parts.dropLast())
-        guard !modifiers.isEmpty else { return nil }
-        return HotKeySpec(
-            keyCode: code,
-            usesCommand: modifiers.contains("cmd") || modifiers.contains("command"),
-            usesOption: modifiers.contains("alt") || modifiers.contains("option"),
-            usesControl: modifiers.contains("ctrl") || modifiers.contains("control"),
-            usesShift: modifiers.contains("shift"))
+        let usesCommand = modifiers.contains("cmd") || modifiers.contains("command")
+        let usesOption = modifiers.contains("alt") || modifiers.contains("option")
+        let usesControl = modifiers.contains("ctrl") || modifiers.contains("control")
+        let usesShift = modifiers.contains("shift")
+
+        // Validate RECOGNISED modifiers, not merely that some token preceded the
+        // key. "fn+space" has a token but no recognised modifier, and would
+        // otherwise register an unmodified global Space — swallowing the space
+        // bar system-wide.
+        guard usesCommand || usesOption || usesControl || usesShift else { return nil }
+
+        return HotKeySpec(keyCode: code,
+                          usesCommand: usesCommand,
+                          usesOption: usesOption,
+                          usesControl: usesControl,
+                          usesShift: usesShift)
     }
 }
