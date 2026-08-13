@@ -13,6 +13,7 @@ public final class ActivationGuard: NSObject {
     private let switcher: Switcher
     private var pinnedBundleIDs: Set<String>
     private var suppressedUntil = Date.distantPast
+    private var running = false
 
     public init(registry: WindowRegistry, parker: Parker, switcher: Switcher,
                 pinnedBundleIDs: Set<String>) {
@@ -23,12 +24,16 @@ public final class ActivationGuard: NSObject {
     }
 
     public func start() {
+        guard !running else { return }
+        running = true
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(appActivated(_:)),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
     }
 
     public func stop() {
+        guard running else { return }
+        running = false
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
@@ -52,9 +57,16 @@ public final class ActivationGuard: NSObject {
         // Only act when the user has been left with nothing to look at.
         guard windows.allSatisfy({ parker.isParked($0.id) }) else { return }
 
+        // `registry.windows` comes from a dictionary, so its order is
+        // arbitrary. When an app's parked windows span more than one box —
+        // a browser with windows in two projects, say — picking `.first`
+        // would send the user somewhere different on identical input. Sort so
+        // the same cmd+tab always lands in the same box.
         let target = windows
             .map { switcher.membership.boxName(for: $0, pinnedBundleIDs: pinnedBundleIDs) }
-            .first { $0 != switcher.activeBox }
+            .filter { $0 != switcher.activeBox }
+            .sorted()
+            .first
         guard let target else { return }
         onWantsSwitch?(target)
     }

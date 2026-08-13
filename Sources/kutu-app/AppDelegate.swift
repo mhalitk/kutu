@@ -97,8 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchTo(_ box: String) {
-        activationGuard?.suppress(for: 1.0)
         switcher.switchTo(box)
+        // Suppression starts AFTER the switch, not before. Parking and
+        // unparking is synchronous Accessibility work that can take a
+        // meaningful slice of a second under load; starting the clock first
+        // spends the budget on the switch itself and can let the resulting
+        // activation notification arrive unsuppressed. Workspace notifications
+        // are posted to the main run loop, so anything fired during the switch
+        // is still delivered after this line runs.
+        activationGuard?.suppress(for: 1.0)
         refreshUI()
     }
 
