@@ -330,6 +330,49 @@ Check.run("a window parked by a dead run is rescued on relaunch") {
     return (restored, "want \(victimFrame.origin) got \(now.frame.origin)")
 }
 
+Check.run("a frame whose window is alive but missing from the sweep is kept") {
+    // The branch the CGWindowList cross-check exists for. Simulates an app
+    // still launching, or too busy to answer Accessibility within the
+    // messaging timeout: absent from the sweep while its window plainly still
+    // exists. Pruning here would strand it permanently, so passing an empty
+    // sweep must NOT discard the frame.
+    recoveryRegistry.refresh()
+    guard let live = recoveryRegistry.windows.first(where: { $0.id == victim.id }) else {
+        return (false, "victim window disappeared")
+    }
+    _ = recoveryParker.park(live)
+    Thread.sleep(forTimeInterval: 0.3)
+
+    let blind = Parker(resolver: recoveryRegistry,
+                       store: StateStore(file: StateFile(path: recoveryPath)))
+    blind.reconcile(activeBox: Membership.lobby,
+                    membership: Membership(),
+                    pinnedBundleIDs: [],
+                    windows: [])
+    let kept = StateFile(path: recoveryPath).load().parkedFrames[String(victim.id)] != nil
+
+    // Put the window back for whatever runs next.
+    recoveryRegistry.refresh()
+    Parker(resolver: recoveryRegistry, store: StateStore(file: StateFile(path: recoveryPath)))
+        .reconcile(activeBox: Membership.lobby, membership: Membership(),
+                   pinnedBundleIDs: [], windows: recoveryRegistry.windows)
+    Thread.sleep(forTimeInterval: 0.3)
+    return (kept, kept ? "" : "frame pruned while the window was still alive")
+}
+
+Check.run("a frame for a window the server no longer knows is pruned") {
+    // The complementary half: absence from BOTH sources really does mean gone.
+    let ghost: WindowID = 4_294_900_000
+    let store = StateStore(file: StateFile(path: recoveryPath))
+    store.mutate { $0.parkedFrames[String(ghost)] = CGRect(x: 10, y: 10, width: 100, height: 100) }
+    recoveryRegistry.refresh()
+    Parker(resolver: recoveryRegistry, store: store)
+        .reconcile(activeBox: Membership.lobby, membership: Membership(),
+                   pinnedBundleIDs: [], windows: recoveryRegistry.windows)
+    let gone = StateFile(path: recoveryPath).load().parkedFrames[String(ghost)] == nil
+    return (gone, gone ? "" : "stale frame for a dead window survived")
+}
+
 recoveryParker.unparkAll()
 recoveryRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })

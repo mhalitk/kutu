@@ -110,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activationGuard.reload(pinnedBundleIDs: Set(config.pinnedBundleIDs))
         hotKey?.unregister()
         hotKey = HotKey(spec: config.hotkey) { [weak self] in self?.showPalette() }
+        if hotKey == nil {
+            // Same diagnostic as the launch path. Without it, editing
+            // boxes.toml to an unparseable or already-taken combination
+            // silently leaves the user with no hotkey and no clue why.
+            NSLog("kutu: could not register hotkey '\(config.hotkey)' after reload")
+        }
         refreshUI()
     }
 
