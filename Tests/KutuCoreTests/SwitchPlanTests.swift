@@ -3,9 +3,9 @@ import Foundation
 import CoreGraphics
 @testable import KutuCore
 
-private func ref(_ id: WindowID, bundle: String = "com.example.app") -> WindowRef {
-    WindowRef(id: id, pid: 1, bundleID: bundle, appName: "App", title: "t",
-              frame: CGRect(x: 0, y: 0, width: 100, height: 100), isFullScreen: false)
+private func ref(_ id: WindowID, bundle: String = "com.example.app") -> KutuWindow {
+    KutuWindow(id: id, pid: 1, bundleID: bundle, appName: "App", title: "t",
+               frame: CGRect(x: 0, y: 0, width: 100, height: 100), isFullScreen: false)
 }
 
 @Test func targetBoxWindowsAreUnparkedAndOthersParked() {
@@ -48,8 +48,8 @@ private func ref(_ id: WindowID, bundle: String = "com.example.app") -> WindowRe
 @Test func fullScreenWindowsAreNeverParked() {
     var m = Membership()
     m.assign(1, to: "haber")
-    let full = WindowRef(id: 1, pid: 1, bundleID: "b", appName: "A", title: "t",
-                         frame: .zero, isFullScreen: true)
+    let full = KutuWindow(id: 1, pid: 1, bundleID: "b", appName: "A", title: "t",
+                          frame: .zero, isFullScreen: true)
     let plan = SwitchPlan.compute(all: [full], membership: m,
                                   pinnedBundleIDs: [], target: "orchard")
     #expect(plan.toPark.isEmpty)

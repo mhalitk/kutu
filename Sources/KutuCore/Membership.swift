@@ -30,7 +30,7 @@ public struct Membership: Sendable, Codable, Equatable {
         pinnedWindows.remove(String(id))
     }
 
-    public func tier(of ref: WindowRef, pinnedBundleIDs: Set<String>) -> Tier {
+    public func tier(of ref: KutuWindow, pinnedBundleIDs: Set<String>) -> Tier {
         if pinnedWindows.contains(String(ref.id)) || pinnedBundleIDs.contains(ref.bundleID) {
             return .pinned
         }
@@ -39,7 +39,7 @@ public struct Membership: Sendable, Codable, Equatable {
     }
 
     /// The box a window is visible in. Loose windows live in the lobby.
-    public func boxName(for ref: WindowRef, pinnedBundleIDs: Set<String>) -> String {
+    public func boxName(for ref: KutuWindow, pinnedBundleIDs: Set<String>) -> String {
         switch tier(of: ref, pinnedBundleIDs: pinnedBundleIDs) {
         case .boxed(let box): return box
         case .pinned: return Membership.lobby

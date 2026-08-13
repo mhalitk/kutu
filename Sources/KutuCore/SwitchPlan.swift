@@ -13,7 +13,7 @@ public struct SwitchPlan: Sendable, Equatable {
     /// for the target box. Pinned and full-screen windows are always visible;
     /// full-screen windows because macOS gives them their own Space and they
     /// cannot be moved at all.
-    public static func compute(all: [WindowRef],
+    public static func compute(all: [KutuWindow],
                                membership: Membership,
                                pinnedBundleIDs: Set<String>,
                                target: String) -> SwitchPlan {

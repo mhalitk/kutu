@@ -10,9 +10,9 @@ private func tempPath() -> String {
         .appendingPathComponent("state.json").path
 }
 
-private func windowRef(_ id: WindowID) -> WindowRef {
-    WindowRef(id: id, pid: 1, bundleID: "b", appName: "A", title: "t",
-              frame: .zero, isFullScreen: false)
+private func kutuWindow(_ id: WindowID) -> KutuWindow {
+    KutuWindow(id: id, pid: 1, bundleID: "b", appName: "A", title: "t",
+               frame: .zero, isFullScreen: false)
 }
 
 @Test func loadingAbsentFileYieldsEmptyState() {
@@ -73,7 +73,7 @@ private func windowRef(_ id: WindowID) -> WindowRef {
 
     let onDisk = StateFile(path: path).load()
     #expect(onDisk.parkedFrames["7"] == CGRect(x: 1, y: 2, width: 3, height: 4))
-    #expect(onDisk.membership.tier(of: windowRef(9), pinnedBundleIDs: []) == .boxed("beta"))
+    #expect(onDisk.membership.tier(of: kutuWindow(9), pinnedBundleIDs: []) == .boxed("beta"))
 }
 
 @Test func concurrentWritersDoNotClobberEachOther() throws {
@@ -94,7 +94,7 @@ private func windowRef(_ id: WindowID) -> WindowRef {
     let onDisk = StateFile(path: path).load()
     #expect(onDisk.parkedFrames.count == 25)
     for index in stride(from: 1, to: 50, by: 2) {
-        #expect(onDisk.membership.tier(of: windowRef(WindowID(index)),
+        #expect(onDisk.membership.tier(of: kutuWindow(WindowID(index)),
                                        pinnedBundleIDs: []) == .boxed("box-\(index)"))
     }
 }

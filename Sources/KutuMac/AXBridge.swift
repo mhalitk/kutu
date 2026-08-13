@@ -9,9 +9,9 @@ private func AXUIElementGetWindowPrivate(_ element: AXUIElement,
                                          _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 public struct ManagedWindow: Sendable {
-    public let ref: KutuCore.WindowRef
+    public let ref: KutuWindow
     public let element: AXUIElement
-    public init(ref: KutuCore.WindowRef, element: AXUIElement) {
+    public init(ref: KutuWindow, element: AXUIElement) {
         self.ref = ref
         self.element = element
     }
@@ -94,7 +94,7 @@ public enum AXBridge {
                   let id = windowID(of: element),
                   let origin = position(element),
                   let extent = size(element) else { return nil }
-            let ref = KutuCore.WindowRef(
+            let ref = KutuWindow(
                 id: id,
                 pid: pid,
                 bundleID: bundleID,
