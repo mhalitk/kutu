@@ -16,9 +16,7 @@ public final class StatusServer {
         self.onPayload = onPayload
     }
 
-    public static var defaultPath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".local/state/kutu/kutu.sock")
-    }
+    public static var defaultPath: String { KutuPaths.socket }
 
     public func start() throws {
         try? FileManager.default.createDirectory(

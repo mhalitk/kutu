@@ -4,9 +4,7 @@ import KutuCore
 let socketPath = StatusSocket.defaultPath
 
 enum StatusSocket {
-    static var defaultPath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".local/state/kutu/kutu.sock")
-    }
+    static var defaultPath: String { KutuPaths.socket }
 }
 
 func send(_ message: ControlMessage) -> Bool {
@@ -76,8 +74,7 @@ case "panic":
     exit(send(ControlMessage(kutu: "panic")) ? 0 : 1)
 
 case "ls":
-    let config = (try? KutuConfig.load(from: (NSHomeDirectory() as NSString)
-        .appendingPathComponent(".config/kutu/boxes.toml"))) ?? KutuConfig()
+    let config = (try? KutuConfig.load(from: KutuPaths.config)) ?? KutuConfig()
     for box in config.boxes { print("\(box.name)\t\(box.dir)") }
     print(Membership.lobby)
 
