@@ -340,7 +340,17 @@ Check.run("a frame whose window is alive but missing from the sweep is kept") {
     guard let live = recoveryRegistry.windows.first(where: { $0.id == victim.id }) else {
         return (false, "victim window disappeared")
     }
-    _ = recoveryParker.park(live)
+    // A FRESH store, deliberately. A StateStore caches its state at init and
+    // only updates it through its own mutate calls, so `recoveryParker`'s copy
+    // is stale the moment the previous check unparked through a different
+    // instance. Parking through a stale cache makes `park` see a phantom entry,
+    // silently no-op, and leave this check asserting on state nothing wrote.
+    let parkerForCheck = Parker(resolver: recoveryRegistry,
+                                store: StateStore(file: StateFile(path: recoveryPath)))
+    // Assert the park actually happened: a silent no-op here would rob the
+    // check of all discriminating power, which is exactly what it exists to
+    // provide.
+    guard parkerForCheck.park(live) else { return (false, "could not park the victim window") }
     Thread.sleep(forTimeInterval: 0.3)
 
     let blind = Parker(resolver: recoveryRegistry,
@@ -373,7 +383,10 @@ Check.run("a frame for a window the server no longer knows is pruned") {
     return (gone, gone ? "" : "stale frame for a dead window survived")
 }
 
-recoveryParker.unparkAll()
+// Also a fresh store, for the same staleness reason.
+recoveryRegistry.refresh()
+Parker(resolver: recoveryRegistry, store: StateStore(file: StateFile(path: recoveryPath)))
+    .unparkAll()
 recoveryRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
 
