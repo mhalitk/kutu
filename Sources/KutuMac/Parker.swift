@@ -87,14 +87,29 @@ public final class Parker {
                           windows: [KutuWindow]) {
         let byID = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0) })
 
+        // The window server's own inventory. Unlike the Accessibility sweep it
+        // does not depend on an application being responsive, which matters
+        // below.
+        let liveIDs = Set(((CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
+                                                       kCGNullWindowID) as? [[String: Any]]) ?? [])
+            .compactMap { $0["kCGWindowNumber"] as? UInt32 })
+
         for key in store.parkedFrames.keys {
             guard let id = WindowID(key) else {
                 store.mutate { $0.parkedFrames.removeValue(forKey: key) }
                 continue
             }
             guard let ref = byID[id] else {
-                // The window died while parked; the frame is meaningless now.
-                store.mutate { $0.parkedFrames.removeValue(forKey: key) }
+                // Missing from the Accessibility sweep is NOT proof the window
+                // is gone: an app still launching, or merely too busy to answer
+                // within the messaging timeout, is absent from the sweep while
+                // its window still exists. Discarding that frame would strand
+                // the window off-screen permanently — the one outcome this
+                // whole design exists to prevent. Only drop the frame when the
+                // window server agrees the window no longer exists.
+                if !liveIDs.contains(id) {
+                    store.mutate { $0.parkedFrames.removeValue(forKey: key) }
+                }
                 continue
             }
             let shouldStayHidden: Bool
