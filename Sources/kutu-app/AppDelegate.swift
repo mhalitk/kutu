@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
     private var mask: SliverMask!
     private var palette: PaletteWindow!
+    private var activationGuard: ActivationGuard!
     private var hotKey: HotKey?
     private let tracker = StatusTracker()
     private var config = KutuConfig()
@@ -66,6 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.switcher.forget(id)
             self?.refreshUI()
         }
+
+        activationGuard = ActivationGuard(registry: registry, parker: parker,
+                                          switcher: switcher,
+                                          pinnedBundleIDs: Set(config.pinnedBundleIDs))
+        activationGuard.onWantsSwitch = { [weak self] box in self?.switchTo(box) }
+        activationGuard.start()
+
         registry.start()
 
         refreshUI()
@@ -77,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func switchTo(_ box: String) {
+        activationGuard?.suppress(for: 1.0)
         switcher.switchTo(box)
         refreshUI()
     }
