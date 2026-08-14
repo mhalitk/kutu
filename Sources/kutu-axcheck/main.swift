@@ -392,16 +392,48 @@ closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.Te
 
 Check.finish()
 
-/// `kAXCloseAction` does not exist in AXActionConstants.h. Closing a window
-/// through Accessibility means pressing its close button, per Apple's pattern.
+/// `kAXCloseAction` does not exist in AXActionConstants.h, so closing a
+/// window through Accessibility means locating its close button — but
+/// closes it the way a user does, a real click, not an
+/// `AXUIElementPerformAction` press.
+///
+/// Measured directly (see the WindowRegistry flaky-check investigation):
+/// `AXUIElementPerformAction(closeButton, kAXPressAction)` does trigger the
+/// close — the AX sweep drops the window immediately — but the window server
+/// does not agree. `CGWindowListCopyWindowInfo` kept listing an AX-pressed
+/// "closed" window for over 13 minutes with its owning app idle, only
+/// clearing once that app's window list changed again for an unrelated
+/// reason. A real click (or a real key event) on the identical button
+/// settles the window server's view in well under a second, every time.
+/// `WindowRegistry.refresh()` deliberately gates removal on the window
+/// server agreeing — that is the fix for a Critical stranding bug, not
+/// something to weaken — so this harness has to close windows the same way
+/// a person would, or that gate can never be satisfied.
 func closeAll(_ windows: [ManagedWindow]) {
     for window in windows {
+        AXBridge.raise(window.element) // avoid clicking through an occluding window
         var button: CFTypeRef?
-        if AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString,
-                                         &button) == .success,
-           let button, CFGetTypeID(button) == AXUIElementGetTypeID() {
-            AXUIElementPerformAction((button as! AXUIElement), kAXPressAction as CFString)
-        }
+        guard AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString,
+                                            &button) == .success,
+              let button, CFGetTypeID(button) == AXUIElementGetTypeID() else { continue }
+        var posValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue((button as! AXUIElement), kAXPositionAttribute as CFString,
+                                            &posValue) == .success,
+              AXUIElementCopyAttributeValue((button as! AXUIElement), kAXSizeAttribute as CFString,
+                                            &sizeValue) == .success else { continue }
+        var origin = CGPoint.zero
+        var extent = CGSize.zero
+        AXValueGetValue((posValue as! AXValue), .cgPoint, &origin)
+        AXValueGetValue((sizeValue as! AXValue), .cgSize, &extent)
+        let point = CGPoint(x: origin.x + extent.width / 2, y: origin.y + extent.height / 2)
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+               mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+               mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.1)
     }
 }
 
