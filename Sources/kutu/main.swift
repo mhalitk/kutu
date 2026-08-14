@@ -40,6 +40,8 @@ usage:
   kutu status <box> <state>         report working | waiting | idle for a box
   kutu status <box> clear           retract a previously reported status
   kutu panic                        unpark every hidden window
+  kutu register                     add this directory's kutu.toml box to boxes.toml
+  kutu reload                       tell the running kutu to re-read boxes.toml
 
 any tool can report status directly:
   echo '{"kutu":"status","arg":"myBox","state":"working"}' | nc -U \(socketPath)
@@ -72,6 +74,86 @@ case "status":
 
 case "panic":
     exit(send(ControlMessage(kutu: "panic")) ? 0 : 1)
+
+case "reload":
+    exit(send(ControlMessage(kutu: "reload")) ? 0 : 1)
+
+case "register":
+    guard arguments.count == 1 else {
+        print(usage)
+        exit(1)
+    }
+    let cwd = FileManager.default.currentDirectoryPath
+    let manifestPath = (cwd as NSString).appendingPathComponent("kutu.toml")
+    guard let manifestText = try? String(contentsOfFile: manifestPath, encoding: .utf8) else {
+        print("no kutu.toml at \(manifestPath) — see the manifest format `kutu open` expects (README).")
+        exit(1)
+    }
+    let manifest: BoxManifest
+    do {
+        manifest = try BoxManifest.parse(manifestText)
+    } catch {
+        print("could not parse \(manifestPath): \(error)")
+        exit(1)
+    }
+    guard !manifest.name.isEmpty else {
+        print("\(manifestPath) has no `name` — a box needs one to be registered.")
+        exit(1)
+    }
+    let home = NSHomeDirectory()
+    let displayDir = BoxRegistration.displayPath(cwd, home: home)
+    let config = (try? KutuConfig.load(from: KutuPaths.config)) ?? KutuConfig()
+
+    switch BoxRegistration.plan(existing: config, name: manifest.name, dir: displayDir) {
+    case .alreadyRegistered:
+        print("\(manifest.name) is already registered.")
+        exit(0)
+
+    case .conflict(let existingDir):
+        print("""
+        \(manifest.name) is already registered to a different directory:
+          existing:  \(existingDir)
+          this dir:  \(displayDir)
+        Edit \(KutuPaths.config) directly if this is intentional.
+        """)
+        exit(1)
+
+    case .append(let block):
+        let configDir = (KutuPaths.config as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+        var text = (try? String(contentsOfFile: KutuPaths.config, encoding: .utf8)) ?? ""
+        if text.isEmpty {
+            text = String(block.dropFirst())   // no leading blank line in a brand-new file
+        } else {
+            if !text.hasSuffix("\n") { text += "\n" }
+            text += block
+        }
+        do {
+            try text.write(toFile: KutuPaths.config, atomically: true, encoding: .utf8)
+        } catch {
+            print("could not write \(KutuPaths.config): \(error)")
+            exit(1)
+        }
+
+        print("registered \(manifest.name) -> \(displayDir)")
+        if manifest.apps.isEmpty {
+            print("  (no [[app]] entries — kutu open will just switch to the box)")
+        }
+        for app in manifest.apps {
+            if let command = LaunchCommand.build(for: app, in: cwd) {
+                print("  " + ([command.executable] + command.arguments).joined(separator: " "))
+            } else {
+                print("  [\(app.kind.rawValue)] produces no launch command — check its fields in kutu.toml")
+            }
+        }
+
+        if send(ControlMessage(kutu: "reload")) {
+            print("reloaded the running kutu.")
+        } else {
+            print("kutu does not appear to be running — restart it, or use \"Reload config\" in the menu bar, to pick this up.")
+        }
+        exit(0)
+    }
 
 case "ls":
     let config = (try? KutuConfig.load(from: KutuPaths.config)) ?? KutuConfig()

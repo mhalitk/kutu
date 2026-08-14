@@ -48,11 +48,19 @@ Optional `kutu.toml` in a box directory declares what `kutu open` launches:
     profile = "orchard"
     urls    = ["http://localhost:3000"]
 
+The normal way to add a project is `cd` into it and run `kutu register`: it
+reads that `kutu.toml`, appends a matching `[[box]]` block to `boxes.toml`,
+and reloads the running app — no hand-editing or menu click required.
+Re-running it is safe; it also catches a broken `kutu.toml` before it ever
+reaches `kutu open`.
+
 ## Use
 
 - `⌥Space` — palette; type to filter, Enter to switch
 - Menu bar — box list with live Claude status, unpark everything, reload config
 - `kutu go <box>` / `kutu open <box>` / `kutu ls` / `kutu panic`
+- `kutu register` — add this directory's `kutu.toml` box to `boxes.toml`
+- `kutu reload` — tell the running kutu to re-read `boxes.toml`
 - `kutu status <box> working|waiting|idle` — light up a box from any tool
 - cmd+tab to an app whose windows are all in another box does **not** switch
   you there by default — it briefly shows which box the app lives in, and you

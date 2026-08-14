@@ -169,6 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 parker.unparkAll()
                 refreshUI()
                 return
+            case "reload":
+                reloadConfig()
+                return
             case "status":
                 if control.state == nil, let box = control.arg {
                     tracker.clearAll(forBox: box,
