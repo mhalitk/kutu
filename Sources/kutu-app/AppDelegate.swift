@@ -39,7 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `menuBar` still nil and trap on the implicit unwrap. Starting the
         // registry is therefore the last thing this method does.
         mask = SliverMask()
-        mask.show()
 
         menuBar = MenuBarController(switcher: switcher, parker: parker,
                                     tracker: tracker, config: config)
@@ -201,8 +200,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // relying on call ordering alone.
         guard let mask, let menuBar else { return }
         let box = switcher.activeBox
-        mask.setLabel(box, state: tracker.state(forBox: box,
-                                                directory: config.boxes.first { $0.name == box }?.dir))
+
+        // The mask exists to cover the fragments macOS leaves behind when a
+        // window is parked. With nothing parked there is nothing to cover, so
+        // showing it would be pure noise — the menu bar item is the persistent
+        // indicator.
+        if parker.parkedIDs.isEmpty {
+            mask.hide()
+        } else {
+            mask.setLabel(box, state: tracker.state(forBox: box,
+                                                    directory: config.boxes.first { $0.name == box }?.dir))
+            mask.show()
+        }
+
         menuBar.refresh()
     }
 

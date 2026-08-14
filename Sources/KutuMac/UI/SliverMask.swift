@@ -2,7 +2,8 @@ import AppKit
 import KutuCore
 
 /// Covers the fragment macOS refuses to move off-screen, and doubles as the
-/// always-visible indicator of which box is active.
+/// active-box label. Only shown while something is actually parked; the menu
+/// bar item is the persistent indicator when nothing needs covering.
 public final class SliverMask {
     public var onClick: (() -> Void)?
 
