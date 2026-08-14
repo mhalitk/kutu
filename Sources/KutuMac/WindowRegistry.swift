@@ -13,6 +13,7 @@ public final class WindowRegistry: NSObject, WindowResolving {
     private var running = false
     private var isRefreshing = false
     private var hasSwept = false
+    private var recheckPending = false
 
     public var windows: [KutuWindow] { byID.values.map(\.ref) }
 
@@ -73,19 +74,46 @@ public final class WindowRegistry: NSObject, WindowResolving {
             byID[window.ref.id] = window
             if !isInitialSweep { onWindowAdded?(window.ref) }
         }
+        var deferredRemoval = false
         for id in knownIDs.subtracting(currentIDs) {
             // Absence from the Accessibility sweep is not death: an app blocked
             // past the messaging timeout vanishes from the sweep while its
             // windows still exist. Deleting a parked window's saved frame on
             // that evidence strands it permanently, so only the window server
             // settles it.
-            guard !liveIDs.contains(id) else { continue }
+            guard !liveIDs.contains(id) else {
+                // ...but the window server can also lag behind the Accessibility
+                // notification that brought us here, and no further notification
+                // is coming. Without a re-check the window would stay in `byID`
+                // forever and its box membership and saved frame would never be
+                // released.
+                deferredRemoval = true
+                continue
+            }
             byID.removeValue(forKey: id)
             onWindowRemoved?(id)
         }
         // Refresh frames of windows we already knew about.
         for window in current where knownIDs.contains(window.ref.id) {
             byID[window.ref.id] = window
+        }
+
+        if deferredRemoval { scheduleRecheck() }
+    }
+
+    /// A removal skipped because the window server still lists the id needs a
+    /// second look later: the notification that triggered this `refresh()` was
+    /// the only one coming, so nothing else will prompt a re-check once the
+    /// server catches up. Bounded to one in-flight timer so a burst of
+    /// notifications (or a genuinely still-alive window that keeps deferring)
+    /// cannot pile up timers on top of each other.
+    private func scheduleRecheck() {
+        guard running, !recheckPending else { return }
+        recheckPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.running else { return }
+            self.recheckPending = false
+            self.refresh()
         }
     }
 
