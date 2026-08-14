@@ -3,10 +3,13 @@ import KutuCore
 
 /// cmd+tab activates an application, not a window. If every window of the
 /// activated application is parked, the user gets a frontmost app with nothing
-/// on screen. Rather than fight that, kutu treats it as a request to switch to
-/// the box that owns the window.
+/// on screen. This guard notices and reports it — it does not decide to
+/// switch boxes on the user's behalf.
 public final class ActivationGuard: NSObject {
-    public var onWantsSwitch: ((String) -> Void)?
+    /// Fired when the user activated an application whose windows all live in
+    /// another box. Reports what happened; it does not decide what to do about
+    /// it — that is the delegate's call, and it depends on configuration.
+    public var onActivatedHiddenApp: ((_ appName: String, _ box: String) -> Void)?
 
     private let registry: WindowRegistry
     private let parker: Parker
@@ -68,6 +71,6 @@ public final class ActivationGuard: NSObject {
             .sorted()
             .first
         guard let target else { return }
-        onWantsSwitch?(target)
+        onActivatedHiddenApp?(app.localizedName ?? "That app", target)
     }
 }

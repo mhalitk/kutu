@@ -39,6 +39,25 @@ import Foundation
     #expect(cfg.boxes.isEmpty)
 }
 
+@Test func cmdTabDefaultsToNotify() throws {
+    let cfg = try KutuConfig.parse("")
+    #expect(cfg.cmdTab == .notify)
+}
+
+@Test func cmdTabSwitchIsParsed() throws {
+    let cfg = try KutuConfig.parse("""
+    cmd_tab = "switch"
+    """)
+    #expect(cfg.cmdTab == .switch)
+}
+
+@Test func cmdTabUnrecognisedValueFallsBackToNotify() throws {
+    let cfg = try KutuConfig.parse("""
+    cmd_tab = "nonsense"
+    """)
+    #expect(cfg.cmdTab == .notify)
+}
+
 @Test func parsesBoxManifest() throws {
     let m = try BoxManifest.parse("""
     name = "orchard"

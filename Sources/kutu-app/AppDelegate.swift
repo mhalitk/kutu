@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launcher: Launcher!
     private let tracker = StatusTracker()
     private var config = KutuConfig()
+    /// Bumped on every flashHint call so a stale, already-scheduled restore
+    /// from an earlier hint cannot clobber a later one.
+    private var hintGeneration = 0
 
     static let configPath = KutuPaths.config
 
@@ -72,7 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activationGuard = ActivationGuard(registry: registry, parker: parker,
                                           switcher: switcher,
                                           pinnedBundleIDs: Set(config.pinnedBundleIDs))
-        activationGuard.onWantsSwitch = { [weak self] box in self?.switchTo(box) }
+        activationGuard.onActivatedHiddenApp = { [weak self] appName, box in
+            guard let self else { return }
+            switch self.config.cmdTab {
+            case .switch:
+                self.switchTo(box)
+            case .notify:
+                self.flashHint("\(appName) is in \(box)")
+            }
+        }
         activationGuard.start()
 
         launcher = Launcher(assigner: assigner)
@@ -214,6 +225,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menuBar.refresh()
+    }
+
+    /// Briefly shows `text` on the sliver mask, then returns it to its normal
+    /// state. A hint that arrives before the previous one expires replaces it
+    /// and restarts the timer, rather than leaving a stale message or hiding
+    /// early — `hintGeneration` lets the deferred restore recognise it has
+    /// been superseded and no-op.
+    private func flashHint(_ text: String) {
+        hintGeneration += 1
+        let generation = hintGeneration
+        mask.setLabel(text, state: nil)
+        mask.show()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            guard let self, self.hintGeneration == generation else { return }
+            self.refreshUI()
+        }
     }
 
     private func presentTrustAlert() {

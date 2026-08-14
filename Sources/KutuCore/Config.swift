@@ -11,14 +11,24 @@ public struct BoxSpec: Sendable, Equatable, Codable {
 }
 
 public struct KutuConfig: Sendable, Equatable {
+    /// Governs what happens when the user cmd+tabs to an application whose
+    /// windows are all parked in another box.
+    public enum CmdTabBehaviour: String, Sendable, Equatable {
+        case notify   // default: never switch, just say where the app lives
+        case `switch` // legacy: jump to the box that owns the window
+    }
+
     public let hotkey: String
     public let pinnedBundleIDs: [String]
     public let boxes: [BoxSpec]
+    public let cmdTab: CmdTabBehaviour
 
-    public init(hotkey: String = "alt+space", pinnedBundleIDs: [String] = [], boxes: [BoxSpec] = []) {
+    public init(hotkey: String = "alt+space", pinnedBundleIDs: [String] = [], boxes: [BoxSpec] = [],
+                cmdTab: CmdTabBehaviour = .notify) {
         self.hotkey = hotkey
         self.pinnedBundleIDs = pinnedBundleIDs
         self.boxes = boxes
+        self.cmdTab = cmdTab
     }
 
     public static func parse(_ toml: String) throws -> KutuConfig {
@@ -38,10 +48,12 @@ public struct KutuConfig: Sendable, Equatable {
                 if let value = array[index].string { pinned.append(value) }
             }
         }
+        let cmdTab = table["cmd_tab"]?.string.flatMap(KutuConfig.CmdTabBehaviour.init(rawValue:)) ?? .notify
         return KutuConfig(
             hotkey: table["hotkey"]?.string ?? "alt+space",
             pinnedBundleIDs: pinned,
-            boxes: boxes
+            boxes: boxes,
+            cmdTab: cmdTab
         )
     }
 

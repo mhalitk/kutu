@@ -29,6 +29,7 @@ Grant Accessibility to Kutu when prompted.
 
     hotkey = "alt+space"
     pinned = ["com.spotify.client"]
+    cmd_tab = "notify"   # or "switch" for the old auto-switch behaviour
 
     [[box]]
     name = "orchard"
@@ -53,6 +54,10 @@ Optional `kutu.toml` in a box directory declares what `kutu open` launches:
 - Menu bar — box list with live Claude status, unpark everything, reload config
 - `kutu go <box>` / `kutu open <box>` / `kutu ls` / `kutu panic`
 - `kutu status <box> working|waiting|idle` — light up a box from any tool
+- cmd+tab to an app whose windows are all in another box does **not** switch
+  you there by default — it briefly shows which box the app lives in, and you
+  switch on purpose with `⌥Space`. Set `cmd_tab = "switch"` in `boxes.toml` to
+  restore the old auto-switch-on-activate behaviour.
 
 kutu has no dependency on Claude Code. Boxes are just windows plus an optional
 directory. The status dot is a generic channel: Claude Code's hooks are one
