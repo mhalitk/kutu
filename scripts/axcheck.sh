@@ -3,6 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if pgrep -f "Kutu.app/Contents/MacOS/Kutu" >/dev/null; then
+    echo "Kutu.app is running. Quit it first — the harness moves real windows and the app will fight it." >&2
+    exit 1
+fi
+
 LOG="$HOME/.local/state/kutu/axcheck.log"
 mkdir -p "$(dirname "$LOG")"
 rm -f "$LOG"
