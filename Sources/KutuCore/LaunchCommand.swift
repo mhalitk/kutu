@@ -35,7 +35,11 @@ public enum LaunchCommand {
 
         case .app:
             guard let bundleID = spec.bundleID else { return nil }
-            return ("/usr/bin/open", ["-b", bundleID])
+            // `open -b <id> <urls…>` hands the URLs to that application. This
+            // is the general path for any browser or document app; `chrome`
+            // exists separately only because profile selection needs a
+            // Chrome-specific flag.
+            return ("/usr/bin/open", ["-b", bundleID] + spec.urls)
         }
     }
 

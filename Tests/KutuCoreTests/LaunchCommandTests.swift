@@ -32,6 +32,19 @@ import Testing
     #expect(command?.arguments == ["-b", "com.postmanlabs.mac"])
 }
 
+@Test func genericAppPassesURLsThrough() {
+    let command = LaunchCommand.build(
+        for: AppSpec(kind: .app, urls: ["http://localhost:4321", "http://localhost:4322"], bundleID: "org.mozilla.firefox"),
+        in: "/w/a")
+    #expect(command?.executable == "/usr/bin/open")
+    #expect(command?.arguments == ["-b", "org.mozilla.firefox", "http://localhost:4321", "http://localhost:4322"])
+}
+
+@Test func genericAppWithNoURLsIsUnchanged() {
+    let command = LaunchCommand.build(for: AppSpec(kind: .app, bundleID: "org.mozilla.firefox"), in: "/w/a")
+    #expect(command?.arguments == ["-b", "org.mozilla.firefox"])
+}
+
 @Test func singleQuotesInPathsAreEscaped() {
     let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/it's")
     let script = command?.arguments.joined(separator: " ") ?? ""
