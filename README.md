@@ -35,7 +35,10 @@ Grant Accessibility to Kutu when prompted.
     name = "orchard"
     dir  = "~/workspace/orchard"
 
-Optional `kutu.toml` in a box directory declares what `kutu open` launches:
+Optional `kutu.toml` in a box directory declares what `kutu open` launches.
+It is personal rather than a property of the project — your terminal, your
+browser, your paths — so it is usually gitignored, most cleanly via a global
+ignore (`~/.config/git/ignore`) rather than a shared repo's `.gitignore`:
 
     name = "orchard"
 
