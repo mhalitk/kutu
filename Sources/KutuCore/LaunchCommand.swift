@@ -21,10 +21,14 @@ public enum LaunchCommand {
             // literal, which has escaping rules of its own. Without this a
             // double quote in either value closes the literal early and the
             // remainder is parsed as AppleScript source.
+            // Bind to the window this script creates. `current window` is a
+            // global that the NEXT concurrently-launched iTerm script will
+            // change out from under this one — two [[app]] entries racing meant
+            // one window received both commands and the other received none.
             let script = """
             tell application "iTerm"
-                create window with default profile
-                tell current session of current window
+                set newWindow to (create window with default profile)
+                tell current session of newWindow
                     write text "\(appleScriptEscaped(shellLine))"
                 end tell
             end tell

@@ -113,3 +113,14 @@ import Testing
     #expect(script.contains("cd '/w/a'"))
     #expect(!script.contains("&&"))
 }
+
+@Test func itermBindsToTheWindowItCreatesNotCurrentWindow() {
+    // `current window` is a global that a second, concurrently-launched
+    // iterm script can reassign out from under this one. The script must
+    // bind to the window it just created instead.
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/a")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(script.contains("set newWindow to (create window with default profile)"))
+    #expect(script.contains("tell current session of newWindow"))
+    #expect(!script.contains("current session of current window"))
+}
