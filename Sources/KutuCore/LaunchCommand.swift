@@ -47,6 +47,23 @@ public enum LaunchCommand {
             // exists separately only because profile selection needs a
             // Chrome-specific flag.
             return ("/usr/bin/open", ["-b", bundleID] + spec.urls)
+
+        case .firefox:
+            // Firefox must be driven through its own binary, not `open`.
+            // With Firefox already running, `open -b <id> <urls>` loads them as
+            // tabs in an EXISTING window — which belongs to whatever box that
+            // window was already in, so hydration cannot claim it and the
+            // switch that follows parks it. `open --args` is ignored outright
+            // for a running app.
+            //
+            // `--url` is the one form that yields exactly one NEW window with
+            // every URL as a tab, which is what makes the window claimable.
+            // (`--new-window` with several URLs opens several windows, and
+            // `--new-tab` targets the last-focused window, not the new one.)
+            guard !spec.urls.isEmpty else {
+                return ("/Applications/Firefox.app/Contents/MacOS/firefox", ["--new-window"])
+            }
+            return ("/Applications/Firefox.app/Contents/MacOS/firefox", ["--url"] + spec.urls)
         }
     }
 

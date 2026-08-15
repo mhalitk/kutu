@@ -51,6 +51,10 @@ ignore (`~/.config/git/ignore`) rather than a shared repo's `.gitignore`:
     profile = "orchard"
     urls    = ["http://localhost:3000"]
 
+    [[app]]
+    kind = "firefox"   # opens urls as tabs in one new, claimable window
+    urls = ["http://localhost:3000"]
+
 The normal way to add a project is `cd` into it and run `kutu register`: it
 reads that `kutu.toml`, appends a matching `[[box]]` block to `boxes.toml`,
 and reloads the running app — no hand-editing or menu click required.

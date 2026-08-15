@@ -66,7 +66,7 @@ public struct KutuConfig: Sendable, Equatable {
 
 public struct AppSpec: Sendable, Equatable, Codable {
     public enum Kind: String, Sendable, Codable {
-        case iterm, chrome, vscode, app
+        case iterm, chrome, vscode, app, firefox
     }
     public let kind: Kind
     public let cmd: String?

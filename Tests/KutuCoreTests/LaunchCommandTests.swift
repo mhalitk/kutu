@@ -45,6 +45,30 @@ import Testing
     #expect(command?.arguments == ["-b", "org.mozilla.firefox"])
 }
 
+@Test func firefoxCommandUsesURLFlagForOneClaimableWindow() {
+    let command = LaunchCommand.build(
+        for: AppSpec(kind: .firefox, urls: ["http://localhost:3000", "http://127.0.0.1:54423"]),
+        in: "/w/a")
+    #expect(command?.executable.hasSuffix("/firefox") == true)
+    #expect(command?.arguments == ["--url", "http://localhost:3000", "http://127.0.0.1:54423"])
+}
+
+@Test func firefoxCommandWithNoURLsJustOpensANewWindow() {
+    let command = LaunchCommand.build(for: AppSpec(kind: .firefox), in: "/w/a")
+    #expect(command?.arguments == ["--new-window"])
+}
+
+@Test func firefoxKindParsesFromManifest() {
+    let manifest = try! BoxManifest.parse("""
+    name = "orchard"
+
+    [[app]]
+    kind = "firefox"
+    urls = ["http://localhost:3000"]
+    """)
+    #expect(manifest.apps.first?.kind == .firefox)
+}
+
 @Test func singleQuotesInPathsAreEscaped() {
     let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/it's")
     let script = command?.arguments.joined(separator: " ") ?? ""
