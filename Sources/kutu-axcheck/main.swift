@@ -390,6 +390,39 @@ Parker(resolver: recoveryRegistry, store: StateStore(file: StateFile(path: recov
 recoveryRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
 
+Check.emit("=== AXBridge.focusedWindowID ===")
+
+let focusFile = scratch.appendingPathComponent("focus.txt")
+try? "kutu".write(to: focusFile, atomically: true, encoding: .utf8)
+let openFocus = Process()
+openFocus.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openFocus.arguments = ["-a", "TextEdit", focusFile.path]
+try? openFocus.run()
+openFocus.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+if let textEdit = NSWorkspace.shared.runningApplications
+    .first(where: { $0.bundleIdentifier == "com.apple.TextEdit" }) {
+    // The palette is non-activating, so this is the state kutu actually
+    // queries in: TextEdit frontmost, its own focused window unambiguous.
+    textEdit.activate()
+    Thread.sleep(forTimeInterval: 1.0)
+
+    Check.run("focusedWindowID matches one of TextEdit's window ids") {
+        let ids = Set(textEditWindows().map(\.ref.id))
+        guard let focused = AXBridge.focusedWindowID(pid: textEdit.processIdentifier) else {
+            return (false, "no focused window id")
+        }
+        return (ids.contains(focused), "focused \(focused) not in \(ids)")
+    }
+} else {
+    Check.run("TextEdit is running to test focusedWindowID") {
+        (false, "TextEdit not found among running applications")
+    }
+}
+
+closeAll(textEditWindows())
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h, so closing a

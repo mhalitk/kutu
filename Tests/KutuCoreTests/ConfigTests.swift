@@ -31,6 +31,18 @@ import Foundation
     #expect(cfg.pinnedBundleIDs.isEmpty)
 }
 
+@Test func moveHotkeyAbsentUsesDefault() throws {
+    let cfg = try KutuConfig.parse("")
+    #expect(cfg.moveHotkey == "alt+shift+space")
+}
+
+@Test func moveHotkeyExplicitValueIsParsed() throws {
+    let cfg = try KutuConfig.parse("""
+    move_hotkey = "cmd+shift+m"
+    """)
+    #expect(cfg.moveHotkey == "cmd+shift+m")
+}
+
 @Test func boxMissingRequiredFieldIsSkipped() throws {
     let cfg = try KutuConfig.parse("""
     [[box]]

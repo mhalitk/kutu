@@ -36,6 +36,7 @@ let usage = """
 usage:
   kutu go <box>                     switch to a box
   kutu open <box>                   switch to a box, launching its kutu.toml apps
+  kutu move <box>                   move the frontmost window to a box
   kutu ls                           list boxes
   kutu status <box> <state>         report working | waiting | idle for a box
   kutu status <box> clear           retract a previously reported status
@@ -55,6 +56,13 @@ case "go", "open":
     }
     exit(send(ControlMessage(kutu: arguments[0] == "open" ? "open" : "switch",
                              arg: arguments[1])) ? 0 : 1)
+
+case "move":
+    guard arguments.count == 2 else {
+        print(usage)
+        exit(1)
+    }
+    exit(send(ControlMessage(kutu: "move", arg: arguments[1])) ? 0 : 1)
 
 case "status":
     guard arguments.count == 3 else {

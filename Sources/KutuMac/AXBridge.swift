@@ -128,6 +128,19 @@ public enum AXBridge {
             }
     }
 
+    /// The window the given application currently has focused, as a window-server
+    /// id. This is how "the window I am looking at" becomes something kutu can
+    /// address — the palette is non-activating, so the frontmost application is
+    /// unchanged while it is open, but the id must still be captured before
+    /// presenting rather than after.
+    public static func focusedWindowID(pid: pid_t) -> WindowID? {
+        let app = appElement(pid: pid)
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &raw) == .success,
+              let value = raw, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return windowID(of: (value as! AXUIElement))
+    }
+
     private static func axValue<T>(_ element: AXUIElement, _ attribute: String,
                                    _ type: AXValueType, _ empty: T) -> T? {
         var raw: CFTypeRef?

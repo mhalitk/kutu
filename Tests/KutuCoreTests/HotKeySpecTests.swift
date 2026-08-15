@@ -36,3 +36,12 @@ import Testing
     #expect(spec?.keyCode == 49)
     #expect(spec?.usesOption == true)
 }
+
+@Test func parsesMoveHotkeyDefault() {
+    let spec = HotKeySpec.parse("alt+shift+space")
+    #expect(spec?.keyCode == 49)
+    #expect(spec?.usesOption == true)
+    #expect(spec?.usesShift == true)
+    #expect(spec?.usesCommand == false)
+    #expect(spec?.usesControl == false)
+}

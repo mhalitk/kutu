@@ -70,6 +70,25 @@ public final class Switcher {
 
     public func switchTo(_ box: String) {
         registry.refresh()
+        let (plan, byID) = applyPlan(target: box)
+        store.mutate { $0.activeBox = box }
+        activatePrimaryApp(of: box, among: plan.toUnpark, byID: byID)
+        onChange?()
+    }
+
+    /// Re-applies the active box's plan after membership changes, so a window
+    /// that no longer belongs here parks at once. Deliberately does not call
+    /// `activatePrimaryApp`: this runs while the user is looking at a specific
+    /// window, and yanking focus to some other application would be hostile.
+    public func reapply() {
+        registry.refresh()
+        _ = applyPlan(target: store.activeBox)
+        onChange?()
+    }
+
+    /// The park/unpark half of applying a plan, shared by `switchTo` (which
+    /// also activates the target box's app) and `reapply` (which does not).
+    private func applyPlan(target box: String) -> (plan: SwitchPlan, byID: [WindowID: KutuWindow]) {
         let plan = SwitchPlan.compute(all: registry.windows,
                                       membership: store.membership,
                                       pinnedBundleIDs: Set(config.pinnedBundleIDs),
@@ -88,9 +107,7 @@ public final class Switcher {
             }
         }
 
-        store.mutate { $0.activeBox = box }
-        activatePrimaryApp(of: box, among: plan.toUnpark, byID: byID)
-        onChange?()
+        return (plan, byID)
     }
 
     /// Brings the box to the foreground. The first declared app would be more

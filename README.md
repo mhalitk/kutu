@@ -28,6 +28,7 @@ Grant Accessibility to Kutu when prompted.
 `~/.config/kutu/boxes.toml`:
 
     hotkey = "alt+space"
+    move_hotkey = "alt+shift+space"
     pinned = ["com.spotify.client"]
     cmd_tab = "notify"   # or "switch" for the old auto-switch behaviour
 
@@ -64,8 +65,10 @@ reaches `kutu open`.
 ## Use
 
 - `⌥Space` — palette; type to filter, Enter to switch
+- `⌥⇧Space` — same palette in move mode: destinations for the frontmost
+  window, including "Pin to every box" and lobby ("unfile")
 - Menu bar — box list with live Claude status, unpark everything, reload config
-- `kutu go <box>` / `kutu open <box>` / `kutu ls` / `kutu panic`
+- `kutu go <box>` / `kutu open <box>` / `kutu move <box>` / `kutu ls` / `kutu panic`
 - `kutu register` — add this directory's `kutu.toml` box to `boxes.toml`
 - `kutu reload` — tell the running kutu to re-read `boxes.toml`
 - `kutu status <box> working|waiting|idle` — light up a box from any tool

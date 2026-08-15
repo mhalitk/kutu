@@ -1,6 +1,25 @@
 import AppKit
 import KutuCore
 
+/// What picking a row in the palette means. In "go to box" mode only `.box`
+/// is ever produced; `.pinEverywhere` exists only in move mode, where an
+/// extra row offers it alongside every known box.
+public enum PaletteChoice: Sendable, Equatable {
+    case box(String)
+    case pinEverywhere
+}
+
+/// The window move mode is acting on — captured before the palette opens, so
+/// "front window" stays unambiguous once it is on screen.
+public struct PaletteSubject: Sendable, Equatable {
+    public let appName: String
+    public let windowTitle: String
+    public init(appName: String, windowTitle: String) {
+        self.appName = appName
+        self.windowTitle = windowTitle
+    }
+}
+
 public struct PaletteRow: Sendable, Equatable {
     public let name: String
     public let state: Status?
@@ -60,27 +79,55 @@ final class PaletteRowView: NSTableRowView {
 /// A non-activating overlay: showing it must not change which application is
 /// frontmost, or the switch it triggers would land in the wrong place.
 public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+    /// One row in the list. Wraps `PaletteRow` (a real box) with the
+    /// synthetic "pin to every box" row that only exists in move mode.
+    private enum Entry {
+        case box(PaletteRow)
+        case pin
+
+        var name: String {
+            switch self {
+            case .box(let row): return row.name
+            case .pin: return "Pin to every box"
+            }
+        }
+    }
+
     private let panel: PalettePanel
     private let scrim = NSView()
     private var effect: NSVisualEffectView?
     private let field = NSTextField()
+    private let subjectLabel = NSTextField(labelWithString: "")
     private let table = NSTableView()
     private let scroll = NSScrollView()
     private let emptyContainer = NSView()
     private let emptyLabel = NSTextField(labelWithString: "No box matches")
 
-    private var allRows: [PaletteRow] = []
-    private var rows: [PaletteRow] = []
-    private var onPick: ((String) -> Void)?
+    private var allEntries: [Entry] = []
+    private var entries: [Entry] = []
+    private var onPick: ((PaletteChoice) -> Void)?
+    /// Set only in move mode. Its presence is what turns on the subject
+    /// line, the pin row, and the trailing hints — nil reproduces the
+    /// original "go to box" palette exactly.
+    private var subject: PaletteSubject?
 
     /// Installed only while the palette is on screen. A monitor left running
     /// after dismissal would swallow every digit keystroke typed anywhere
     /// else, so it is torn down in `dismiss()` as carefully as it is set up
-    /// in `present(boxes:onPick:)`.
+    /// in `present(moving:boxes:onPick:)`.
     private var digitMonitor: Any?
+
+    /// Exactly one of these is active at a time: the hairline sits directly
+    /// under the field in go mode, and under the subject line in move mode.
+    /// Built once in `init`, toggled on every `present`.
+    private var hairlineTopToField: NSLayoutConstraint!
+    private var hairlineTopToSubject: NSLayoutConstraint!
 
     private static let width: CGFloat = 520
     private static let headerHeight: CGFloat = 56
+    /// Extra header space move mode needs for the subject line — its own
+    /// height plus the gap above it — on top of the base `headerHeight`.
+    private static let subjectHeight: CGFloat = 22
     private static let rowHeight: CGFloat = 38
     private static let bottomPadding: CGFloat = 8
     private static let maxVisibleRows = 8
@@ -149,10 +196,25 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
             attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 15)])
         effect.addSubview(field)
 
+        // Shown only in move mode, between the field and the hairline: "the
+        // window I am looking at" is ambiguous the instant the palette
+        // appears otherwise. Hidden and unpositioned-in-flow in go mode, via
+        // `hairlineTopToField` bypassing it entirely.
+        subjectLabel.font = .systemFont(ofSize: 11)
+        subjectLabel.textColor = .secondaryLabelColor
+        subjectLabel.lineBreakMode = .byTruncatingTail
+        subjectLabel.isHidden = true
+        subjectLabel.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(subjectLabel)
+
         let hairline = NSBox()
         hairline.boxType = .separator
         hairline.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(hairline)
+
+        hairlineTopToField = hairline.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 14)
+        hairlineTopToSubject = hairline.topAnchor.constraint(equalTo: subjectLabel.bottomAnchor, constant: 14)
+        hairlineTopToField.isActive = true
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("box"))
         column.width = Self.width
@@ -191,7 +253,10 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
             field.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 20),
             field.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -20),
 
-            hairline.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 14),
+            subjectLabel.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8),
+            subjectLabel.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 20),
+            subjectLabel.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -20),
+
             hairline.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
             hairline.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
 
@@ -210,13 +275,37 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         ])
     }
 
-    public func present(boxes: [PaletteRow], onPick: @escaping (String) -> Void) {
-        self.allRows = boxes
-        self.rows = boxes
+    /// `subject` nil reproduces the original "go to box" palette exactly: no
+    /// subject line, no pin row, no trailing hints. Non-nil switches every
+    /// one of those on for "move this window" — field placeholder included.
+    public func present(moving subject: PaletteSubject?, boxes: [PaletteRow],
+                        onPick: @escaping (PaletteChoice) -> Void) {
+        self.subject = subject
+        self.allEntries = boxes.map(Entry.box) + (subject != nil ? [.pin] : [])
+        self.entries = allEntries
         self.onPick = onPick
         field.stringValue = ""
+
+        let placeholder = subject != nil ? "Move to box" : "Go to box"
+        field.placeholderString = placeholder
+        field.placeholderAttributedString = NSAttributedString(
+            string: placeholder,
+            attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 15)])
+
+        if let subject {
+            subjectLabel.stringValue = "\(subject.appName) — \(subject.windowTitle)"
+            subjectLabel.isHidden = false
+            hairlineTopToField.isActive = false
+            hairlineTopToSubject.isActive = true
+        } else {
+            subjectLabel.stringValue = ""
+            subjectLabel.isHidden = true
+            hairlineTopToSubject.isActive = false
+            hairlineTopToField.isActive = true
+        }
+
         layoutPanel()
-        if !rows.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+        if !entries.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
 
         // Key, not merely front: ordering a window forward does not give it
         // keyboard focus, and the palette is useless without it.
@@ -246,9 +335,9 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
     public func controlTextDidChange(_ notification: Notification) {
         let query = field.stringValue.lowercased()
-        rows = query.isEmpty ? allRows : allRows.filter { Self.matches($0.name.lowercased(), query) }
+        entries = query.isEmpty ? allEntries : allEntries.filter { Self.matches($0.name.lowercased(), query) }
         layoutPanel()
-        if !rows.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+        if !entries.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
     }
 
     /// Subsequence match, so "orc" finds "orchard" and "hc" finds "halit-ca".
@@ -282,17 +371,15 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     private func move(by delta: Int) {
-        guard !rows.isEmpty else { return }
-        let next = min(max(table.selectedRow + delta, 0), rows.count - 1)
+        guard !entries.isEmpty else { return }
+        let next = min(max(table.selectedRow + delta, 0), entries.count - 1)
         table.selectRowIndexes([next], byExtendingSelection: false)
         table.scrollRowToVisible(next)
     }
 
     @objc private func pickSelected() {
-        guard table.selectedRow >= 0, table.selectedRow < rows.count else { return }
-        let name = rows[table.selectedRow].name
-        dismiss()
-        onPick?(name)
+        guard table.selectedRow >= 0, table.selectedRow < entries.count else { return }
+        pick(rowAt: table.selectedRow)
     }
 
     /// Picks and switches to the row at `index` directly — the same terminal
@@ -300,10 +387,14 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     /// table's current selection, so a digit press doesn't have to move the
     /// selection first.
     private func pick(rowAt index: Int) {
-        guard index >= 0, index < rows.count else { return }
-        let name = rows[index].name
+        guard index >= 0, index < entries.count else { return }
+        let choice: PaletteChoice
+        switch entries[index] {
+        case .box(let row): choice = .box(row.name)
+        case .pin: choice = .pinEverywhere
+        }
         dismiss()
-        onPick?(name)
+        onPick?(choice)
     }
 
     /// 1–9 jump straight to a row and switch, with no Enter required — the
@@ -321,7 +412,7 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
                   let digit = characters.first,
                   let value = digit.wholeNumberValue,
                   (1...9).contains(value),
-                  value <= self.rows.count
+                  value <= self.entries.count
             else {
                 return event
             }
@@ -344,14 +435,15 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     private func layoutPanel() {
         table.reloadData()
 
-        let isEmpty = rows.isEmpty
+        let isEmpty = entries.isEmpty
         scroll.isHidden = isEmpty
         emptyContainer.isHidden = !isEmpty
 
         // An empty result still needs room to show the explanatory label;
         // borrow one row's worth of height for it.
-        let visibleRowCount = isEmpty ? 1 : min(rows.count, Self.maxVisibleRows)
-        let height = Self.headerHeight + CGFloat(visibleRowCount) * Self.rowHeight + Self.bottomPadding
+        let visibleRowCount = isEmpty ? 1 : min(entries.count, Self.maxVisibleRows)
+        let header = Self.headerHeight + (subject != nil ? Self.subjectHeight : 0)
+        let height = header + CGFloat(visibleRowCount) * Self.rowHeight + Self.bottomPadding
 
         var frame = panel.frame
         frame.size = NSSize(width: Self.width, height: height)
@@ -363,7 +455,7 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         panel.setFrame(frame, display: true)
     }
 
-    public func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+    public func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
 
     public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let identifier = NSUserInterfaceItemIdentifier("paletteRow")
@@ -377,7 +469,26 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
                           row: Int) -> NSView? {
-        let entry = rows[row]
+        let entry = entries[row]
+        let name: String
+        let isActive: Bool
+        let icons: [NSImage]
+        let overflow: Int
+        let state: Status?
+        switch entry {
+        case .box(let box):
+            name = box.name
+            isActive = box.isActive
+            icons = box.icons
+            overflow = box.overflow
+            state = box.state
+        case .pin:
+            name = entry.name
+            isActive = false
+            icons = []
+            overflow = 0
+            state = nil
+        }
         let container = NSView()
 
         // 1. Shortcut numeral — right-aligned in a fixed gutter. Rows past
@@ -390,15 +501,15 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         container.addSubview(numeralGutter)
 
         // 2. Current-box caret — replaces the old background wash entirely.
-        let caret = NSTextField(labelWithString: entry.isActive ? "▸" : "")
+        let caret = NSTextField(labelWithString: isActive ? "▸" : "")
         caret.font = .systemFont(ofSize: 10)
         caret.textColor = .secondaryLabelColor
         caret.alignment = .center
         caret.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(caret)
 
-        // 3. Box name.
-        let title = NSTextField(labelWithString: entry.name)
+        // 3. Row name — a box, or (move mode only) "Pin to every box".
+        let title = NSTextField(labelWithString: name)
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
@@ -421,12 +532,13 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         // 5. App icons — deduplicated, capped, right-aligned. Built first (but
         // added last, so it draws above nothing in particular — order here
         // only matters for the trailing anchor the name and status lean on).
+        // Empty for the pin row: it represents no particular set of apps.
         let iconsStack = NSStackView()
         iconsStack.orientation = .horizontal
         iconsStack.spacing = 4
         iconsStack.alignment = .centerY
         iconsStack.translatesAutoresizingMaskIntoConstraints = false
-        for icon in entry.icons {
+        for icon in icons {
             let imageView = NSImageView()
             imageView.image = icon
             imageView.imageScaling = .scaleProportionallyUpOrDown
@@ -435,11 +547,11 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
             imageView.heightAnchor.constraint(equalToConstant: 16).isActive = true
             iconsStack.addArrangedSubview(imageView)
         }
-        if entry.overflow > 0 {
-            let overflow = NSTextField(labelWithString: "+\(entry.overflow)")
-            overflow.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-            overflow.textColor = .tertiaryLabelColor
-            iconsStack.addArrangedSubview(overflow)
+        if overflow > 0 {
+            let overflowLabel = NSTextField(labelWithString: "+\(overflow)")
+            overflowLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+            overflowLabel.textColor = .tertiaryLabelColor
+            iconsStack.addArrangedSubview(overflowLabel)
         }
         container.addSubview(iconsStack)
         NSLayoutConstraint.activate([
@@ -448,10 +560,12 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
             title.trailingAnchor.constraint(lessThanOrEqualTo: iconsStack.leadingAnchor, constant: -12)
         ])
 
-        // 4. Status — dot plus lowercase word, only when the box has one.
-        // `idle` renders nothing at all, same as no status.
-        if let word = Self.statusWord(for: entry.state) {
-            let color = entry.state == .waiting ? NSColor.systemOrange : NSColor.secondaryLabelColor
+        // 4. Status word, or — move mode only — a trailing hint for lobby
+        // ("unfile") and the pin row ("always visible"). Mutually exclusive:
+        // a hinted row never also carries a status. Shares one column so
+        // names line up regardless of which (if either) is showing.
+        if let word = Self.statusWord(for: state) {
+            let color = state == .waiting ? NSColor.systemOrange : NSColor.secondaryLabelColor
 
             let dot = NSView()
             dot.wantsLayer = true
@@ -479,6 +593,20 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
                 title.trailingAnchor.constraint(lessThanOrEqualTo: dot.leadingAnchor, constant: -12)
             ])
+        } else if let hint = trailingHint(for: entry) {
+            let label = NSTextField(labelWithString: hint)
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .tertiaryLabelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(label)
+
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.statusColumnX),
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: iconsStack.leadingAnchor, constant: -12),
+
+                title.trailingAnchor.constraint(lessThanOrEqualTo: label.leadingAnchor, constant: -12)
+            ])
         }
 
         return container
@@ -491,6 +619,17 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         case .waiting: return "waiting"
         case .working: return "working"
         case .idle, .none: return nil
+        }
+    }
+
+    /// Only ever non-nil in move mode: go mode never appends the pin row and
+    /// never annotates lobby, so `subject == nil` is the whole gate.
+    private func trailingHint(for entry: Entry) -> String? {
+        guard subject != nil else { return nil }
+        switch entry {
+        case .pin: return "always visible"
+        case .box(let row) where row.name == Membership.lobby: return "unfile"
+        case .box: return nil
         }
     }
 }

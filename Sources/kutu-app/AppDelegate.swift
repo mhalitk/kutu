@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var palette: PaletteWindow!
     private var activationGuard: ActivationGuard!
     private var hotKey: HotKey?
+    private var moveHotKey: HotKey?
     private var statusServer: StatusServer!
     private var launcher: Launcher!
     private let tracker = StatusTracker()
@@ -59,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKey(spec: config.hotkey) { [weak self] in self?.showPalette() }
         if hotKey == nil {
             NSLog("kutu: could not register hotkey '\(config.hotkey)'")
+        }
+        moveHotKey = HotKey(spec: config.moveHotkey) { [weak self] in self?.showMovePalette() }
+        if moveHotKey == nil {
+            NSLog("kutu: could not register move hotkey '\(config.moveHotkey)'")
         }
 
         switcher.onChange = { [weak self] in self?.refreshUI() }
@@ -132,6 +137,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // silently leaves the user with no hotkey and no clue why.
             NSLog("kutu: could not register hotkey '\(config.hotkey)' after reload")
         }
+        moveHotKey?.unregister()
+        moveHotKey = HotKey(spec: config.moveHotkey) { [weak self] in self?.showMovePalette() }
+        if moveHotKey == nil {
+            NSLog("kutu: could not register move hotkey '\(config.moveHotkey)' after reload")
+        }
         refreshUI()
     }
 
@@ -172,6 +182,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "reload":
                 reloadConfig()
                 return
+            case "move":
+                guard let box = control.arg else { return }
+                guard let focused = resolveFocusedWindow() else {
+                    flashHint("No window to move")
+                    return
+                }
+                applyMove(.box(box), id: focused.id, currentBox: focused.currentBox)
+                return
             case "status":
                 if control.state == nil, let box = control.arg {
                     tracker.clearAll(forBox: box,
@@ -194,12 +212,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             palette.dismiss()
             return
         }
+        palette.present(moving: nil, boxes: boxRows()) { [weak self] choice in
+            guard case .box(let box) = choice else { return }
+            self?.switchTo(box)
+        }
+    }
+
+    /// ⌥⇧Space: same panel as `showPalette`, but the destinations are read as
+    /// "move the window I am looking at here" instead of "take me there".
+    /// The subject is captured now, before the palette (non-activating, so
+    /// this does not disturb it) ever appears — it is the only moment
+    /// "frontmost application" reliably means the window the user meant.
+    private func showMovePalette() {
+        guard let focused = resolveFocusedWindow() else {
+            flashHint("No window to move")
+            return
+        }
+        let subject = PaletteSubject(appName: focused.appName, windowTitle: focused.title)
+        palette.present(moving: subject, boxes: boxRows()) { [weak self] choice in
+            self?.applyMove(choice, id: focused.id, currentBox: focused.currentBox)
+        }
+    }
+
+    private struct FocusedWindow {
+        let id: WindowID
+        let appName: String
+        let title: String
+        let currentBox: String
+    }
+
+    /// The shared resolution behind both ⌥⇧Space and `kutu move`: the
+    /// frontmost application (never kutu itself — the palette does not
+    /// activate it, but a non-window surface like the trust alert can still
+    /// be frontmost), its focused window as the window server knows it, and
+    /// that window must already be one the registry has adopted.
+    private func resolveFocusedWindow() -> FocusedWindow? {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else { return nil }
+        guard let id = AXBridge.focusedWindowID(pid: app.processIdentifier) else { return nil }
+        guard let window = registry.windows.first(where: { $0.id == id }) else { return nil }
+        let title = window.title.isEmpty ? (app.localizedName ?? window.appName) : window.title
+        let currentBox = switcher.membership.boxName(for: window,
+                                                      pinnedBundleIDs: Set(config.pinnedBundleIDs))
+        return FocusedWindow(id: id, appName: app.localizedName ?? window.appName,
+                             title: title, currentBox: currentBox)
+    }
+
+    /// Applies one palette pick (or the CLI's equivalent) to the window
+    /// resolved by `resolveFocusedWindow`, then re-parks immediately —
+    /// `reapply()`, not `switchTo`, because the user is looking at this
+    /// window and must not be yanked to another application over it.
+    private func applyMove(_ choice: PaletteChoice, id: WindowID, currentBox: String) {
+        switch choice {
+        case .box(let name):
+            guard name != currentBox else {
+                flashHint("Already in \(name)")
+                return
+            }
+            if name == Membership.lobby {
+                switcher.forget(id)
+            } else {
+                switcher.assign(id, to: name)
+            }
+        case .pinEverywhere:
+            switcher.pin(id)
+        }
+        switcher.reapply()
+        refreshUI()
+    }
+
+    /// The box list the palette shows, in both "go to" and "move" mode —
+    /// same rows, same ordering, same status and icons either way.
+    private func boxRows() -> [PaletteRow] {
         let grouped = Dictionary(grouping: registry.windows) { window in
             switcher.membership.boxName(for: window,
                                         pinnedBundleIDs: Set(config.pinnedBundleIDs))
         }
-
-        let rows = switcher.knownBoxes.map { box -> PaletteRow in
+        return switcher.knownBoxes.map { box -> PaletteRow in
             let (icons, overflow) = Self.faces(for: grouped[box] ?? [])
             return PaletteRow(name: box,
                        state: tracker.state(forBox: box,
@@ -208,7 +298,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                        overflow: overflow,
                        isActive: box == switcher.activeBox)
         }
-        palette.present(boxes: rows) { [weak self] box in self?.switchTo(box) }
     }
 
     /// The palette shows a box's apps, not its windows — several windows of

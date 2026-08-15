@@ -19,13 +19,17 @@ public struct KutuConfig: Sendable, Equatable {
     }
 
     public let hotkey: String
+    /// Opens the palette in move mode, for the frontmost window.
+    public let moveHotkey: String
     public let pinnedBundleIDs: [String]
     public let boxes: [BoxSpec]
     public let cmdTab: CmdTabBehaviour
 
-    public init(hotkey: String = "alt+space", pinnedBundleIDs: [String] = [], boxes: [BoxSpec] = [],
+    public init(hotkey: String = "alt+space", moveHotkey: String = "alt+shift+space",
+                pinnedBundleIDs: [String] = [], boxes: [BoxSpec] = [],
                 cmdTab: CmdTabBehaviour = .notify) {
         self.hotkey = hotkey
+        self.moveHotkey = moveHotkey
         self.pinnedBundleIDs = pinnedBundleIDs
         self.boxes = boxes
         self.cmdTab = cmdTab
@@ -51,6 +55,7 @@ public struct KutuConfig: Sendable, Equatable {
         let cmdTab = table["cmd_tab"]?.string.flatMap(KutuConfig.CmdTabBehaviour.init(rawValue:)) ?? .notify
         return KutuConfig(
             hotkey: table["hotkey"]?.string ?? "alt+space",
+            moveHotkey: table["move_hotkey"]?.string ?? "alt+shift+space",
             pinnedBundleIDs: pinned,
             boxes: boxes,
             cmdTab: cmdTab
