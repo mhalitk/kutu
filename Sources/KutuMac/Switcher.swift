@@ -68,6 +68,23 @@ public final class Switcher {
         }
     }
 
+    /// Runs once at launch. Ids do not survive a reboot, so the saved map
+    /// necessarily holds entries for windows that no longer exist.
+    ///
+    /// Uses the window server rather than the Accessibility sweep, for exactly
+    /// the reason `Parker.reconcile` does: an application too busy to answer AX
+    /// within the messaging timeout is not a dead application, and treating it
+    /// as one would unfile live windows.
+    public func pruneDeadAssignments() {
+        let living = AXBridge.liveWindowIDs()
+        let before = store.membership
+        store.mutate { $0.membership.prune(livingWindowIDs: living) }
+        let removed = before.assignmentCount - store.membership.assignmentCount
+        if removed > 0 {
+            NSLog("kutu: pruned \(removed) assignment(s) for windows that no longer exist")
+        }
+    }
+
     public func switchTo(_ box: String) {
         registry.refresh()
         let (plan, byID) = applyPlan(target: box)

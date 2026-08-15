@@ -30,6 +30,19 @@ public struct Membership: Sendable, Codable, Equatable {
         pinnedWindows.remove(String(id))
     }
 
+    /// Drops assignments for windows that no longer exist. Window ids come from
+    /// the window server and are NOT stable across reboots, so without this the
+    /// map grows without bound — and worse, a fresh window can inherit an id a
+    /// previous session assigned to a box and be filed there silently.
+    public mutating func prune(livingWindowIDs living: Set<WindowID>) {
+        let alive = Set(living.map(String.init))
+        boxed = boxed.filter { alive.contains($0.key) }
+        pinnedWindows = pinnedWindows.intersection(alive)
+    }
+
+    /// Number of live entries, for diagnostics.
+    public var assignmentCount: Int { boxed.count + pinnedWindows.count }
+
     public func tier(of ref: KutuWindow, pinnedBundleIDs: Set<String>) -> Tier {
         if pinnedWindows.contains(String(ref.id)) || pinnedBundleIDs.contains(ref.bundleID) {
             return .pinned

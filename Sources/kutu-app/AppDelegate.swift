@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          membership: switcher.membership,
                          pinnedBundleIDs: Set(config.pinnedBundleIDs),
                          windows: registry.windows)
+        switcher.pruneDeadAssignments()
 
         // Terminate unparks everything, so the saved box's containment has to
         // be re-established or the UI claims a box while every window is

@@ -280,6 +280,22 @@ Check.run("a window appearing while lobby is active stays loose") {
             "box \(box), parked \(switchParker.isParked(window.id))")
 }
 
+Check.run("pruneDeadAssignments drops a fabricated id but keeps a live window") {
+    guard let live = editorWindows.first else { return (false, "no window") }
+    let fabricated: WindowID = 4_294_900_001
+    let fabricatedRef = KutuWindow(id: fabricated, pid: 0, bundleID: "com.example.fabricated",
+                                   appName: "", title: "", frame: .zero, isFullScreen: false)
+    switcher.assign(live.id, to: "alpha")
+    switcher.assign(fabricated, to: "alpha")
+    switcher.pruneDeadAssignments()
+    let liveBox = switcher.membership.boxName(for: live, pinnedBundleIDs: [])
+    let fabricatedGone = switcher.membership.tier(of: fabricatedRef, pinnedBundleIDs: []) == .loose
+    // The live check is the one that matters: a prune that wiped everything
+    // would also pass a test that only looked at the fabricated id.
+    return (fabricatedGone && liveBox == "alpha",
+            "fabricated gone=\(fabricatedGone), live box=\(liveBox)")
+}
+
 switcher.switchTo("alpha")
 switchParker.unparkAll()
 switchRegistry.stop()

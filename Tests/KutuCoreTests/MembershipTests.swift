@@ -62,3 +62,47 @@ private func ref(_ id: WindowID, bundle: String = "com.example.app") -> KutuWind
     let decoded = try JSONDecoder().decode(Membership.self, from: data)
     #expect(decoded == m)
 }
+
+@Test func pruneDropsBoxedAssignmentForDeadWindowAndKeepsLiveOne() {
+    var m = Membership()
+    m.assign(7, to: "orchard")
+    m.assign(8, to: "orchard")
+    m.prune(livingWindowIDs: [8])
+    #expect(m.tier(of: ref(7), pinnedBundleIDs: []) == .loose)
+    #expect(m.tier(of: ref(8), pinnedBundleIDs: []) == .boxed("orchard"))
+}
+
+@Test func pruneDropsPinForDeadWindowAndKeepsLiveOne() {
+    var m = Membership()
+    m.pin(7)
+    m.pin(8)
+    m.prune(livingWindowIDs: [8])
+    #expect(m.tier(of: ref(7), pinnedBundleIDs: []) == .loose)
+    #expect(m.tier(of: ref(8), pinnedBundleIDs: []) == .pinned)
+}
+
+@Test func pruneWithEmptyLivingSetClearsEverything() {
+    var m = Membership()
+    m.assign(7, to: "orchard")
+    m.pin(9)
+    m.prune(livingWindowIDs: [])
+    #expect(m.tier(of: ref(7), pinnedBundleIDs: []) == .loose)
+    #expect(m.tier(of: ref(9), pinnedBundleIDs: []) == .loose)
+}
+
+@Test func pruneIsNoOpWhenEveryIDIsAlive() {
+    var m = Membership()
+    m.assign(7, to: "orchard")
+    m.pin(9)
+    let before = m
+    m.prune(livingWindowIDs: [7, 9])
+    #expect(m == before)
+}
+
+@Test func assignmentCountReflectsBoxedPlusPinned() {
+    var m = Membership()
+    #expect(m.assignmentCount == 0)
+    m.assign(7, to: "orchard")
+    m.pin(9)
+    #expect(m.assignmentCount == 2)
+}
