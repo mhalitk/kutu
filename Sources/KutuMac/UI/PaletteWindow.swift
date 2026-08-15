@@ -65,12 +65,33 @@ final class StatusSquareView: NSView {
 /// Draws its own selection instead of the table's default full-bleed grey
 /// highlight, replacing what AppKit would otherwise draw for `.regular`.
 final class PaletteRowView: NSTableRowView {
+    /// The box the user is currently in.
+    var isCurrent = false {
+        didSet { if isCurrent != oldValue { needsDisplay = true } }
+    }
+
+    /// "Current" and "selected" are different facts and must not share a
+    /// colour: the cursor is accent-tinted by macOS convention, so the box you
+    /// are already in is marked with a neutral wash instead. When the cursor
+    /// lands on the current box the accent draws over the wash and both stay
+    /// readable.
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard isCurrent else { return }
+        NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill()
+        rowRect().fill()
+    }
+
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
-        let rect = bounds.insetBy(dx: 8, dy: 2)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
-        path.fill()
+        rowRect().fill()
+    }
+
+    /// Inset so the fill reads as a pill inside the panel rather than a bar
+    /// running edge to edge.
+    private func rowRect() -> NSBezierPath {
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 2), xRadius: 6, yRadius: 6)
     }
 }
 
@@ -286,11 +307,16 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
     public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let identifier = NSUserInterfaceItemIdentifier("paletteRow")
+        let rowView: PaletteRowView
         if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? PaletteRowView {
-            return reused
+            rowView = reused
+        } else {
+            rowView = PaletteRowView()
+            rowView.identifier = identifier
         }
-        let rowView = PaletteRowView()
-        rowView.identifier = identifier
+        // Reused rows carry the previous occupant's state, so this must be set
+        // every time, not only on creation.
+        rowView.isCurrent = rows[row].isActive
         return rowView
     }
 
@@ -306,7 +332,7 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
         let title = NSTextField(labelWithString: entry.name)
         title.font = .systemFont(ofSize: 14, weight: .medium)
-        title.textColor = entry.isActive ? .controlAccentColor : .labelColor
+        title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
         title.translatesAutoresizingMaskIntoConstraints = false
 
