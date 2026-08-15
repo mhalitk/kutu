@@ -149,7 +149,15 @@ case "register":
         }
         for app in manifest.apps {
             if let command = LaunchCommand.build(for: app, in: cwd) {
-                print("  " + ([command.executable] + command.arguments).joined(separator: " "))
+                // The CLI links only KutuCore, which has no LaunchServices
+                // access, so an .appBundle target is printed by its bundle
+                // id rather than resolved to a path.
+                let executable: String
+                switch command.target {
+                case .path(let path): executable = path
+                case .appBundle(let bundleID): executable = bundleID
+                }
+                print("  " + ([executable] + command.arguments).joined(separator: " "))
             } else {
                 print("  [\(app.kind.rawValue)] produces no launch command — check its fields in kutu.toml")
             }

@@ -4,7 +4,7 @@ import Testing
 
 @Test func itermCommandRunsInTheBoxDirectory() {
     let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/a")
-    #expect(command?.executable == "/usr/bin/osascript")
+    #expect(command?.target == .path("/usr/bin/osascript"))
     let script = command?.arguments.joined(separator: " ") ?? ""
     #expect(script.contains("cd '/w/a'"))
     #expect(script.contains("claude"))
@@ -14,7 +14,7 @@ import Testing
     let command = LaunchCommand.build(
         for: AppSpec(kind: .chrome, profile: "orchard", urls: ["http://localhost:3000"]),
         in: "/w/a")
-    #expect(command?.executable == "/usr/bin/open")
+    #expect(command?.target == .path("/usr/bin/open"))
     #expect(command?.arguments.contains("--profile-directory=orchard") == true)
     #expect(command?.arguments.contains("http://localhost:3000") == true)
     #expect(command?.arguments.contains("-na") == true)
@@ -22,7 +22,7 @@ import Testing
 
 @Test func vscodeCommandOpensTheDirectory() {
     let command = LaunchCommand.build(for: AppSpec(kind: .vscode), in: "/w/a")
-    #expect(command?.executable == "/usr/bin/open")
+    #expect(command?.target == .path("/usr/bin/open"))
     #expect(command?.arguments == ["-a", "Visual Studio Code", "/w/a"])
 }
 
@@ -36,7 +36,7 @@ import Testing
     let command = LaunchCommand.build(
         for: AppSpec(kind: .app, urls: ["http://localhost:4321", "http://localhost:4322"], bundleID: "org.mozilla.firefox"),
         in: "/w/a")
-    #expect(command?.executable == "/usr/bin/open")
+    #expect(command?.target == .path("/usr/bin/open"))
     #expect(command?.arguments == ["-b", "org.mozilla.firefox", "http://localhost:4321", "http://localhost:4322"])
 }
 
@@ -49,13 +49,21 @@ import Testing
     let command = LaunchCommand.build(
         for: AppSpec(kind: .firefox, urls: ["http://localhost:3000", "http://127.0.0.1:54423"]),
         in: "/w/a")
-    #expect(command?.executable.hasSuffix("/firefox") == true)
+    #expect(command?.target == .appBundle("org.mozilla.firefox"))
     #expect(command?.arguments == ["--url", "http://localhost:3000", "http://127.0.0.1:54423"])
 }
 
 @Test func firefoxCommandWithNoURLsJustOpensANewWindow() {
     let command = LaunchCommand.build(for: AppSpec(kind: .firefox), in: "/w/a")
     #expect(command?.arguments == ["--new-window"])
+}
+
+@Test func firefoxTargetsItsBundleIDRatherThanAHardcodedPath() {
+    // KutuCore has no LaunchServices access, so a Firefox launch is described
+    // by bundle id and left for the caller (KutuMac) to resolve — it must
+    // work wherever the user installed Firefox, not just /Applications.
+    let command = LaunchCommand.build(for: AppSpec(kind: .firefox), in: "/w/a")
+    #expect(command?.target == .appBundle("org.mozilla.firefox"))
 }
 
 @Test func firefoxKindParsesFromManifest() {

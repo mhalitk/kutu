@@ -1,7 +1,16 @@
 import Foundation
 
 public enum LaunchCommand {
-    public static func build(for spec: AppSpec, in dir: String) -> (executable: String, arguments: [String])? {
+    /// What to execute. `.path` is a concrete executable; `.appBundle` names an
+    /// application by bundle id and leaves resolution to the caller, because
+    /// finding an installed app needs LaunchServices and KutuCore stays free of
+    /// AppKit.
+    public enum Target: Sendable, Equatable {
+        case path(String)
+        case appBundle(String)
+    }
+
+    public static func build(for spec: AppSpec, in dir: String) -> (target: Target, arguments: [String])? {
         switch spec.kind {
         case .iterm:
             // Two layers of quoting, escaped in the right order and for the
@@ -33,16 +42,16 @@ public enum LaunchCommand {
                 end tell
             end tell
             """
-            return ("/usr/bin/osascript", ["-e", script])
+            return (.path("/usr/bin/osascript"), ["-e", script])
 
         case .chrome:
             var arguments = ["-na", "Google Chrome", "--args"]
             if let profile = spec.profile { arguments.append("--profile-directory=\(profile)") }
             arguments.append(contentsOf: spec.urls)
-            return ("/usr/bin/open", arguments)
+            return (.path("/usr/bin/open"), arguments)
 
         case .vscode:
-            return ("/usr/bin/open", ["-a", "Visual Studio Code", dir])
+            return (.path("/usr/bin/open"), ["-a", "Visual Studio Code", dir])
 
         case .app:
             guard let bundleID = spec.bundleID else { return nil }
@@ -50,7 +59,7 @@ public enum LaunchCommand {
             // is the general path for any browser or document app; `chrome`
             // exists separately only because profile selection needs a
             // Chrome-specific flag.
-            return ("/usr/bin/open", ["-b", bundleID] + spec.urls)
+            return (.path("/usr/bin/open"), ["-b", bundleID] + spec.urls)
 
         case .firefox:
             // Firefox must be driven through its own binary, not `open`.
@@ -65,9 +74,9 @@ public enum LaunchCommand {
             // (`--new-window` with several URLs opens several windows, and
             // `--new-tab` targets the last-focused window, not the new one.)
             guard !spec.urls.isEmpty else {
-                return ("/Applications/Firefox.app/Contents/MacOS/firefox", ["--new-window"])
+                return (.appBundle("org.mozilla.firefox"), ["--new-window"])
             }
-            return ("/Applications/Firefox.app/Contents/MacOS/firefox", ["--url"] + spec.urls)
+            return (.appBundle("org.mozilla.firefox"), ["--url"] + spec.urls)
         }
     }
 

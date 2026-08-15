@@ -1,17 +1,9 @@
 # kutu
 
-Workspace containers for macOS. A *box* is a named development context that
-owns a set of windows; switching boxes hides every window that is not in the
-target box, without using Spaces — so cmd+tab can never teleport you somewhere
-unexpected.
+Workspace containers for macOS. A box is a named set of windows; switching boxes parks every window not in the target box far off-screen via the Accessibility API.
 
 ## Requirements
-
-- macOS 14+
-- **Stage Manager must be off.** It intercepts window positioning and leaves a
-  284px fragment of every hidden window on screen.
-- Accessibility permission
-- A code-signing identity (`security find-identity -v -p codesigning`)
+macOS 14+, Stage Manager off, Accessibility permission, a code-signing identity (`security find-identity -v -p codesigning`).
 
 ## Install
 
@@ -29,71 +21,24 @@ Grant Accessibility to Kutu when prompted.
 
     hotkey = "alt+space"
     move_hotkey = "alt+shift+space"
-    pinned = ["com.spotify.client"]
-    cmd_tab = "notify"   # or "switch" for the old auto-switch behaviour
-
     [[box]]
     name = "orchard"
     dir  = "~/workspace/orchard"
 
-Optional `kutu.toml` in a box directory declares what `kutu open` launches.
-It is personal rather than a property of the project — your terminal, your
-browser, your paths — so it is usually gitignored, most cleanly via a global
-ignore (`~/.config/git/ignore`) rather than a shared repo's `.gitignore`:
+`kutu.toml` in a box directory, read by `kutu open`/`kutu register`:
 
     name = "orchard"
-
     [[app]]
     kind = "iterm"
     cmd  = "claude"
 
-    [[app]]
-    kind    = "chrome"
-    profile = "orchard"
-    urls    = ["http://localhost:3000"]
-
-    [[app]]
-    kind = "firefox"   # opens urls as tabs in one new, claimable window
-    urls = ["http://localhost:3000"]
-
-The normal way to add a project is `cd` into it and run `kutu register`: it
-reads that `kutu.toml`, appends a matching `[[box]]` block to `boxes.toml`,
-and reloads the running app — no hand-editing or menu click required.
-Re-running it is safe; it also catches a broken `kutu.toml` before it ever
-reaches `kutu open`.
-
 ## Use
+`⌥Space` switch boxes, `⌥⇧Space` move the frontmost window to a box.
+`kutu go/open/ls/register/reload/move/status/panic`. If something goes wrong: unpark everything in the menu bar, or `kutu panic`.
 
-- `⌥Space` — palette; type to filter, Enter to switch
-- `⌥⇧Space` — same palette in move mode: destinations for the frontmost
-  window, including "Pin to every box" and lobby ("unfile")
-- Menu bar — box list with live Claude status, unpark everything, reload config
-- `kutu go <box>` / `kutu open <box>` / `kutu move <box>` / `kutu ls` / `kutu panic`
-- `kutu register` — add this directory's `kutu.toml` box to `boxes.toml`
-- `kutu reload` — tell the running kutu to re-read `boxes.toml`
-- `kutu status <box> working|waiting|idle` — light up a box from any tool
-- cmd+tab to an app whose windows are all in another box does **not** switch
-  you there by default — it briefly shows which box the app lives in, and you
-  switch on purpose with `⌥Space`. Set `cmd_tab = "switch"` in `boxes.toml` to
-  restore the old auto-switch-on-activate behaviour.
+## Known limits
 
-kutu has no dependency on Claude Code. Boxes are just windows plus an optional
-directory. The status dot is a generic channel: Claude Code's hooks are one
-optional adapter, and anything else can report the same way:
-
-    echo '{"kutu":"status","arg":"myBox","state":"working"}' \
-      | nc -U ~/.local/state/kutu/kutu.sock
-
-Windows you never classify live in `lobby`. Windows opened while a box is
-active join that box. Pinned applications stay visible in every box.
-
-## If something goes wrong
-
-A crash leaves your windows recoverable: kutu reconciles at launch, restoring
-anything that belongs in the active box, and "Unpark everything" restores the
-rest.
-
-## Tests
-
-    swift test          # pure logic
-    scripts/axcheck.sh  # accessibility integration, needs its own grant
+- single display only — park coordinates and the corner chip use the main screen
+- depends on `_AXUIElementGetWindow`, a private API, so it could break in a macOS update and it cannot ship on the Mac App Store
+- Stage Manager must be off — it clamps windows differently and kutu refuses to park while it is on
+- `kutu open` hydration is lightly tested
