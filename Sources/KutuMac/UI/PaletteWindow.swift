@@ -5,11 +5,16 @@ public struct PaletteRow: Sendable, Equatable {
     public let name: String
     public let state: Status?
     public let windowCount: Int
+    /// The box you are in right now. Marked in the accent colour rather than
+    /// with another glyph: the square already carries status, and giving it a
+    /// second meaning would make both harder to read at a glance.
+    public let isActive: Bool
 
-    public init(name: String, state: Status?, windowCount: Int) {
+    public init(name: String, state: Status?, windowCount: Int, isActive: Bool = false) {
         self.name = name
         self.state = state
         self.windowCount = windowCount
+        self.isActive = isActive
     }
 }
 
@@ -301,7 +306,7 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
         let title = NSTextField(labelWithString: entry.name)
         title.font = .systemFont(ofSize: 14, weight: .medium)
-        title.textColor = .labelColor
+        title.textColor = entry.isActive ? .controlAccentColor : .labelColor
         title.lineBreakMode = .byTruncatingTail
         title.translatesAutoresizingMaskIntoConstraints = false
 

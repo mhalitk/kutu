@@ -203,7 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteRow(name: box,
                        state: tracker.state(forBox: box,
                                             directory: config.boxes.first { $0.name == box }?.dir),
-                       windowCount: counts[box] ?? 0)
+                       windowCount: counts[box] ?? 0,
+                       isActive: box == switcher.activeBox)
         }
         palette.present(boxes: rows) { [weak self] box in self?.switchTo(box) }
     }
