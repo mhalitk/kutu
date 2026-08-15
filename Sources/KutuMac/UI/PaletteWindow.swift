@@ -58,7 +58,7 @@ final class StatusSquareView: NSView {
 }
 
 /// Draws its own selection instead of the table's default full-bleed grey
-/// highlight, since the table's `selectionHighlightStyle` is set to `.none`.
+/// highlight, replacing what AppKit would otherwise draw for `.regular`.
 final class PaletteRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
@@ -132,7 +132,12 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         table.dataSource = self
         table.delegate = self
         table.backgroundColor = .clear
-        table.selectionHighlightStyle = .none
+        // NOT `.none`: that disables AppKit's selection-drawing pipeline
+        // entirely, including PaletteRowView's `drawSelection` override, so the
+        // selection moves invisibly and the palette looks like it has stopped
+        // responding to the arrow keys. `.regular` keeps the pipeline alive;
+        // the override replaces what it draws.
+        table.selectionHighlightStyle = .regular
         table.target = self
         table.doubleAction = #selector(pickSelected)
 
