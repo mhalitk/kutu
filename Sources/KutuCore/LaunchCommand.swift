@@ -9,7 +9,14 @@ public enum LaunchCommand {
             // single quotes so it needs the close-escape-reopen idiom, while
             // `cmd` IS a shell command line and must stay unquoted — shell
             // escaping it would corrupt a legitimate `say it's done`.
-            let shellLine = "cd '\(singleQuoteEscaped(dir))' && \(spec.cmd ?? "")"
+            //
+            // With no command this is just a `cd`: appending an unconditional
+            // `&&` would leave a dangling operator and the shell would reject
+            // the whole line.
+            let command = spec.cmd?.trimmingCharacters(in: .whitespaces) ?? ""
+            let shellLine = command.isEmpty
+                ? "cd '\(singleQuoteEscaped(dir))'"
+                : "cd '\(singleQuoteEscaped(dir))' && \(command)"
             // The whole line is then embedded in an AppleScript string
             // literal, which has escaping rules of its own. Without this a
             // double quote in either value closes the literal early and the

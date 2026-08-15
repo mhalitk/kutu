@@ -75,3 +75,17 @@ import Testing
     let script = command?.arguments.joined(separator: " ") ?? ""
     #expect(script.contains("say it's done"))
 }
+
+@Test func itermWithNoCommandJustCDs() {
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm), in: "/w/a")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(script.contains("cd '/w/a'"))
+    #expect(!script.contains("&&"))
+}
+
+@Test func itermWithWhitespaceOnlyCommandIsTreatedAsAbsent() {
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "   "), in: "/w/a")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(script.contains("cd '/w/a'"))
+    #expect(!script.contains("&&"))
+}
