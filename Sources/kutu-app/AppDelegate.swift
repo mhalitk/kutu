@@ -194,19 +194,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             palette.dismiss()
             return
         }
-        let counts = Dictionary(grouping: registry.windows) { window in
+        let grouped = Dictionary(grouping: registry.windows) { window in
             switcher.membership.boxName(for: window,
                                         pinnedBundleIDs: Set(config.pinnedBundleIDs))
-        }.mapValues(\.count)
+        }
 
-        let rows = switcher.knownBoxes.map { box in
-            PaletteRow(name: box,
+        let rows = switcher.knownBoxes.map { box -> PaletteRow in
+            let (icons, overflow) = Self.faces(for: grouped[box] ?? [])
+            return PaletteRow(name: box,
                        state: tracker.state(forBox: box,
                                             directory: config.boxes.first { $0.name == box }?.dir),
-                       windowCount: counts[box] ?? 0,
+                       icons: icons,
+                       overflow: overflow,
                        isActive: box == switcher.activeBox)
         }
         palette.present(boxes: rows) { [weak self] box in self?.switchTo(box) }
+    }
+
+    /// The palette shows a box's apps, not its windows — several windows of
+    /// the same app collapse to one face. Sorted by bundle identifier rather
+    /// than by, say, most-recently-active, so the same box always shows the
+    /// same icons in the same order between one ⌥Space and the next.
+    private static func faces(for windows: [KutuWindow]) -> (icons: [NSImage], overflow: Int) {
+        var iconsByBundleID: [String: NSImage] = [:]
+        var seenBundleIDs = Set<String>()
+        for window in windows where seenBundleIDs.insert(window.bundleID).inserted {
+            if let icon = NSRunningApplication(processIdentifier: window.pid)?.icon {
+                iconsByBundleID[window.bundleID] = icon
+            }
+        }
+        let ordered = seenBundleIDs.sorted()
+        let shown = ordered.prefix(5).compactMap { iconsByBundleID[$0] }
+        let overflow = max(0, ordered.count - 5)
+        return (shown, overflow)
     }
 
     private func refreshUI() {
@@ -223,8 +243,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if parker.parkedIDs.isEmpty {
             mask.hide()
         } else {
-            mask.setLabel(box, state: tracker.state(forBox: box,
-                                                    directory: config.boxes.first { $0.name == box }?.dir))
+            mask.setLabel(box,
+                          state: tracker.state(forBox: box,
+                                               directory: config.boxes.first { $0.name == box }?.dir),
+                          hidden: parker.parkedIDs.count)
             mask.show()
         }
 

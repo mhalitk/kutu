@@ -4,16 +4,21 @@ import KutuCore
 public struct PaletteRow: Sendable, Equatable {
     public let name: String
     public let state: Status?
-    public let windowCount: Int
-    /// The box you are in right now. Marked in the accent colour rather than
-    /// with another glyph: the square already carries status, and giving it a
-    /// second meaning would make both harder to read at a glance.
+    /// Faces of the apps whose windows live in this box, deduped by bundle
+    /// identifier and capped at 5 — see `overflow` for the rest.
+    public let icons: [NSImage]
+    /// Count of distinct apps beyond the first 5 shown in `icons`.
+    public let overflow: Int
+    /// The box you are in right now. Marked with a leading caret rather than
+    /// a background wash, so it reads at a glance without competing with the
+    /// selection highlight.
     public let isActive: Bool
 
-    public init(name: String, state: Status?, windowCount: Int, isActive: Bool = false) {
+    public init(name: String, state: Status?, icons: [NSImage], overflow: Int, isActive: Bool = false) {
         self.name = name
         self.state = state
-        self.windowCount = windowCount
+        self.icons = icons
+        self.overflow = overflow
         self.isActive = isActive
     }
 }
@@ -27,65 +32,22 @@ final class PalettePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-/// kutu's signature element: a small drawn square whose fill carries a box's
-/// status. Selection is a separate affordance (drawn by `PaletteRowView`), so
-/// this view only ever renders `state` — it has no notion of being selected.
-final class StatusSquareView: NSView {
-    var state: Status? {
-        didSet { needsDisplay = true }
-    }
-
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Inset by half the stroke width so a 1.5pt outline doesn't clip
-        // against the view's own bounds.
-        let rect = bounds.insetBy(dx: 0.75, dy: 0.75)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
-
-        switch state {
-        case .working:
-            NSColor.systemBlue.setFill()
-            path.fill()
-        case .waiting:
-            NSColor.systemOrange.setFill()
-            path.fill()
-        case .idle:
-            path.lineWidth = 1.5
-            NSColor.tertiaryLabelColor.setStroke()
-            path.stroke()
-        case .none:
-            path.lineWidth = 1.5
-            NSColor.quaternaryLabelColor.setStroke()
-            path.stroke()
-        }
-    }
-}
-
 /// Draws its own selection instead of the table's default full-bleed grey
 /// highlight, replacing what AppKit would otherwise draw for `.regular`.
 final class PaletteRowView: NSTableRowView {
-    /// The box the user is currently in.
-    var isCurrent = false {
-        didSet { if isCurrent != oldValue { needsDisplay = true } }
-    }
-
-    /// "Current" and "selected" are different facts and must not share a
-    /// colour: the cursor is accent-tinted by macOS convention, so the box you
-    /// are already in is marked with a neutral wash instead. When the cursor
-    /// lands on the current box the accent draws over the wash and both stay
-    /// readable.
-    override func drawBackground(in dirtyRect: NSRect) {
-        super.drawBackground(in: dirtyRect)
-        guard isCurrent else { return }
-        NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill()
-        rowRect().fill()
-    }
-
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
         NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
         rowRect().fill()
+    }
+
+    /// AppKit's "emphasized" selection (the window is key, so the highlight
+    /// gets the system's own full-width blue treatment) draws *underneath*
+    /// `drawSelection` and can still show through around it. Forcing this to
+    /// `false` keeps the only selection paint the pill drawn above.
+    override var isEmphasized: Bool {
+        get { false }
+        set { }
     }
 
     /// Inset so the fill reads as a pill inside the panel rather than a bar
@@ -99,6 +61,8 @@ final class PaletteRowView: NSTableRowView {
 /// frontmost, or the switch it triggers would land in the wrong place.
 public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     private let panel: PalettePanel
+    private let scrim = NSView()
+    private var effect: NSVisualEffectView?
     private let field = NSTextField()
     private let table = NSTableView()
     private let scroll = NSScrollView()
@@ -109,11 +73,23 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     private var rows: [PaletteRow] = []
     private var onPick: ((String) -> Void)?
 
-    private static let width: CGFloat = 460
+    /// Installed only while the palette is on screen. A monitor left running
+    /// after dismissal would swallow every digit keystroke typed anywhere
+    /// else, so it is torn down in `dismiss()` as carefully as it is set up
+    /// in `present(boxes:onPick:)`.
+    private var digitMonitor: Any?
+
+    private static let width: CGFloat = 520
     private static let headerHeight: CGFloat = 56
-    private static let rowHeight: CGFloat = 32
+    private static let rowHeight: CGFloat = 38
     private static let bottomPadding: CGFloat = 8
-    private static let maxVisibleRows = 7
+    private static let maxVisibleRows = 8
+
+    /// Fixed x-position (from the row's leading edge) where a status word
+    /// begins. Kept constant across every row — rather than trailing each
+    /// name at whatever width it happens to render — so the words line up
+    /// down the list regardless of name length.
+    private static let statusColumnX: CGFloat = 210
 
     public override init() {
         panel = PalettePanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.headerHeight + Self.bottomPadding),
@@ -127,22 +103,50 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
+        // `.hudWindow` is a DARK material: in Light mode it renders as
+        // translucent grey and the desktop reads straight through, so the
+        // panel's contrast depended on the user's wallpaper. `.popover` is
+        // appearance-appropriate, and the scrim below makes legibility
+        // unconditional — this window appears over terminals, browsers and
+        // video, and must be readable over all of them.
         let effect = NSVisualEffectView()
-        effect.material = .hudWindow
+        effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 14
         effect.layer?.masksToBounds = true
+        effect.layer?.borderWidth = 1
         panel.contentView = effect
 
+        // Near-opaque, semantic so it follows light/dark rather than pinning a
+        // literal white that would invert badly at night. A little blur still
+        // shows through at the edges, which keeps it feeling like a floating
+        // panel rather than a flat rectangle.
+        scrim.wantsLayer = true
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(scrim, positioned: .below, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            scrim.topAnchor.constraint(equalTo: effect.topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            scrim.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: effect.trailingAnchor)
+        ])
+        self.effect = effect
+
         field.placeholderString = "Go to box"
-        field.font = .systemFont(ofSize: 17)
+        field.font = .systemFont(ofSize: 15)
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
         field.delegate = self
         field.translatesAutoresizingMaskIntoConstraints = false
+        // The placeholder inherits the field's text colour by default, which
+        // would put it at full label strength — too loud for a hint whose job
+        // is to recede behind the list.
+        field.placeholderAttributedString = NSAttributedString(
+            string: "Go to box",
+            attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 15)])
         effect.addSubview(field)
 
         let hairline = NSBox()
@@ -216,12 +220,26 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
         // Key, not merely front: ordering a window forward does not give it
         // keyboard focus, and the palette is useless without it.
+        applyChrome()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
+        installDigitMonitor()
+    }
+
+    /// CGColors do not follow appearance changes on their own, so the scrim and
+    /// border are resolved against the current appearance each time the palette
+    /// is shown. It is rebuilt on every present anyway, so this costs nothing.
+    private func applyChrome() {
+        panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+            scrim.layer?.backgroundColor =
+                NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
+            effect?.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
     }
 
     public func dismiss() {
         panel.orderOut(nil)
+        removeDigitMonitor()
     }
 
     public var isVisible: Bool { panel.isVisible }
@@ -277,6 +295,48 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         onPick?(name)
     }
 
+    /// Picks and switches to the row at `index` directly — the same terminal
+    /// action as `pickSelected()`, just addressed by row index instead of the
+    /// table's current selection, so a digit press doesn't have to move the
+    /// selection first.
+    private func pick(rowAt index: Int) {
+        guard index >= 0, index < rows.count else { return }
+        let name = rows[index].name
+        dismiss()
+        onPick?(name)
+    }
+
+    /// 1–9 jump straight to a row and switch, with no Enter required — the
+    /// interaction the whole layout is built around. Only live while the
+    /// palette is on screen and only while the filter field is empty: once
+    /// the user has typed letters, digits must fall through as normal query
+    /// text instead of being hijacked as shortcuts.
+    private func installDigitMonitor() {
+        removeDigitMonitor()
+        digitMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard self.field.stringValue.isEmpty,
+                  let characters = event.charactersIgnoringModifiers,
+                  characters.count == 1,
+                  let digit = characters.first,
+                  let value = digit.wholeNumberValue,
+                  (1...9).contains(value),
+                  value <= self.rows.count
+            else {
+                return event
+            }
+            self.pick(rowAt: value - 1)
+            return nil
+        }
+    }
+
+    private func removeDigitMonitor() {
+        if let digitMonitor {
+            NSEvent.removeMonitor(digitMonitor)
+        }
+        digitMonitor = nil
+    }
+
     /// Sizes the panel to its content — header plus rows, capped at
     /// `maxVisibleRows` before it scrolls — and re-centres it. Called on
     /// every `present` and whenever filtering changes the row set, so the
@@ -307,66 +367,130 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
 
     public func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let identifier = NSUserInterfaceItemIdentifier("paletteRow")
-        let rowView: PaletteRowView
         if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? PaletteRowView {
-            rowView = reused
-        } else {
-            rowView = PaletteRowView()
-            rowView.identifier = identifier
+            return reused
         }
-        // Reused rows carry the previous occupant's state, so this must be set
-        // every time, not only on creation.
-        rowView.isCurrent = rows[row].isActive
+        let rowView = PaletteRowView()
+        rowView.identifier = identifier
         return rowView
     }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?,
                           row: Int) -> NSView? {
         let entry = rows[row]
-
         let container = NSView()
 
-        let square = StatusSquareView()
-        square.state = entry.state
-        square.translatesAutoresizingMaskIntoConstraints = false
+        // 1. Shortcut numeral — right-aligned in a fixed gutter. Rows past
+        // the 9th digit shortcut get nothing here.
+        let numeralGutter = NSTextField(labelWithString: row < 9 ? "\(row + 1)" : "")
+        numeralGutter.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        numeralGutter.textColor = .tertiaryLabelColor
+        numeralGutter.alignment = .right
+        numeralGutter.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(numeralGutter)
 
+        // 2. Current-box caret — replaces the old background wash entirely.
+        let caret = NSTextField(labelWithString: entry.isActive ? "▸" : "")
+        caret.font = .systemFont(ofSize: 10)
+        caret.textColor = .secondaryLabelColor
+        caret.alignment = .center
+        caret.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(caret)
+
+        // 3. Box name.
         let title = NSTextField(labelWithString: entry.name)
-        title.font = .systemFont(ofSize: 14, weight: .medium)
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
         title.translatesAutoresizingMaskIntoConstraints = false
-
-        container.addSubview(square)
         container.addSubview(title)
 
         NSLayoutConstraint.activate([
-            square.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            square.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            square.widthAnchor.constraint(equalToConstant: 10),
-            square.heightAnchor.constraint(equalToConstant: 10),
+            numeralGutter.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            numeralGutter.widthAnchor.constraint(equalToConstant: 20),
+            numeralGutter.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
-            title.leadingAnchor.constraint(equalTo: square.trailingAnchor, constant: 12),
+            caret.leadingAnchor.constraint(equalTo: numeralGutter.trailingAnchor),
+            caret.widthAnchor.constraint(equalToConstant: 12),
+            caret.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+            title.leadingAnchor.constraint(equalTo: caret.trailingAnchor),
             title.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
-        // The count is noise when it's zero — a fresh box with no windows
-        // doesn't need "0" next to its name — so it's only added when > 0.
-        if entry.windowCount > 0 {
-            let count = NSTextField(labelWithString: "\(entry.windowCount)")
-            count.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-            count.textColor = .tertiaryLabelColor
-            count.alignment = .right
-            count.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(count)
+        // 5. App icons — deduplicated, capped, right-aligned. Built first (but
+        // added last, so it draws above nothing in particular — order here
+        // only matters for the trailing anchor the name and status lean on).
+        let iconsStack = NSStackView()
+        iconsStack.orientation = .horizontal
+        iconsStack.spacing = 4
+        iconsStack.alignment = .centerY
+        iconsStack.translatesAutoresizingMaskIntoConstraints = false
+        for icon in entry.icons {
+            let imageView = NSImageView()
+            imageView.image = icon
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            imageView.widthAnchor.constraint(equalToConstant: 16).isActive = true
+            imageView.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            iconsStack.addArrangedSubview(imageView)
+        }
+        if entry.overflow > 0 {
+            let overflow = NSTextField(labelWithString: "+\(entry.overflow)")
+            overflow.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+            overflow.textColor = .tertiaryLabelColor
+            iconsStack.addArrangedSubview(overflow)
+        }
+        container.addSubview(iconsStack)
+        NSLayoutConstraint.activate([
+            iconsStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            iconsStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: iconsStack.leadingAnchor, constant: -12)
+        ])
+
+        // 4. Status — dot plus lowercase word, only when the box has one.
+        // `idle` renders nothing at all, same as no status.
+        if let word = Self.statusWord(for: entry.state) {
+            let color = entry.state == .waiting ? NSColor.systemOrange : NSColor.secondaryLabelColor
+
+            let dot = NSView()
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = color.cgColor
+            dot.layer?.cornerRadius = 3.5
+            dot.translatesAutoresizingMaskIntoConstraints = false
+
+            let label = NSTextField(labelWithString: word)
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = color
+            label.translatesAutoresizingMaskIntoConstraints = false
+
+            container.addSubview(dot)
+            container.addSubview(label)
+
             NSLayoutConstraint.activate([
-                count.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-                count.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-                title.trailingAnchor.constraint(lessThanOrEqualTo: count.leadingAnchor, constant: -8)
+                dot.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.statusColumnX),
+                dot.widthAnchor.constraint(equalToConstant: 7),
+                dot.heightAnchor.constraint(equalToConstant: 7),
+                dot.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+                label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: iconsStack.leadingAnchor, constant: -12),
+
+                title.trailingAnchor.constraint(lessThanOrEqualTo: dot.leadingAnchor, constant: -12)
             ])
-        } else {
-            title.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16).isActive = true
         }
 
         return container
+    }
+
+    /// `idle` and no status at all are the same fact visually: nothing to
+    /// show. Only `waiting` and `working` render.
+    private static func statusWord(for state: Status?) -> String? {
+        switch state {
+        case .waiting: return "waiting"
+        case .working: return "working"
+        case .idle, .none: return nil
+        }
     }
 }

@@ -9,7 +9,10 @@ public final class SliverMask {
 
     private let panel: NSPanel
     private let label = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
     private let dot = NSView()
+    private let scrim = NSView()
+    private var effect: NSVisualEffectView?
 
     /// Tall enough for the largest observed title bar (64px) plus padding;
     /// wide enough to bury the 40px horizontal clamp under real content.
@@ -28,34 +31,61 @@ public final class SliverMask {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.isMovable = false
 
+        // Same treatment as the palette: `.hudWindow` is a DARK material and
+        // rendered as a murky blob in Light mode, letting the desktop through.
         let effect = NSVisualEffectView()
-        effect.material = .hudWindow
+        effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 12
         effect.layer?.masksToBounds = true
+        effect.layer?.borderWidth = 1
         panel.contentView = effect
+        self.effect = effect
+
+        scrim.wantsLayer = true
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(scrim, positioned: .below, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            scrim.topAnchor.constraint(equalTo: effect.topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            scrim.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: effect.trailingAnchor)
+        ])
 
         dot.wantsLayer = true
         dot.layer?.cornerRadius = 4
         dot.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(dot)
 
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = .labelColor
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(label)
 
+        // This panel only exists while windows are parked, so it can answer the
+        // one question you cannot get anywhere else at that moment: how much is
+        // out of sight. Monospace so the number does not reflow as it changes.
+        detail.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        detail.textColor = .tertiaryLabelColor
+        detail.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(detail)
+
         NSLayoutConstraint.activate([
-            dot.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 12),
-            dot.centerYAnchor.constraint(equalTo: effect.centerYAnchor),
+            dot.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 14),
+            dot.centerYAnchor.constraint(equalTo: label.centerYAnchor),
             dot.widthAnchor.constraint(equalToConstant: 8),
             dot.heightAnchor.constraint(equalToConstant: 8),
+
             label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 8),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -12),
-            label.centerYAnchor.constraint(equalTo: effect.centerYAnchor)
+            label.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -14),
+            label.topAnchor.constraint(equalTo: effect.topAnchor, constant: 20),
+
+            detail.leadingAnchor.constraint(equalTo: label.leadingAnchor),
+            detail.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -14),
+            detail.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 3)
         ])
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(clicked))
@@ -71,9 +101,16 @@ public final class SliverMask {
         panel.orderOut(nil)
     }
 
-    public func setLabel(_ text: String, state: Status?) {
+    public func setLabel(_ text: String, state: Status?, hidden: Int = 0) {
         label.stringValue = text
-        dot.layer?.backgroundColor = Self.color(for: state).cgColor
+        detail.stringValue = hidden == 1 ? "1 hidden" : "\(hidden) hidden"
+        detail.isHidden = hidden == 0
+        panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+            dot.layer?.backgroundColor = Self.color(for: state).cgColor
+            scrim.layer?.backgroundColor =
+                NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
+            effect?.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
         reposition()
     }
 
