@@ -22,12 +22,12 @@ Grant Accessibility to Kutu when prompted.
     hotkey = "alt+space"
     move_hotkey = "alt+shift+space"
     [[box]]
-    name = "orchard"
-    dir  = "~/workspace/orchard"
+    name = "myproject"
+    dir  = "~/code/myproject"
 
 `kutu.toml` in a box directory, read by `kutu open`/`kutu register`:
 
-    name = "orchard"
+    name = "myproject"
     [[app]]
     kind = "iterm"
     cmd  = "claude"

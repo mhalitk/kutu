@@ -112,9 +112,36 @@ case "register":
     let displayDir = BoxRegistration.displayPath(cwd, home: home)
     let config = (try? KutuConfig.load(from: KutuPaths.config)) ?? KutuConfig()
 
+    /// Printed on every register, not only the first. Re-running this after
+    /// editing kutu.toml is how you check the manifest still produces the
+    /// commands you expect — exiting early on an already-registered box made
+    /// that impossible.
+    func printLaunchPlan(_ manifest: BoxManifest, in dir: String) {
+        if manifest.apps.isEmpty {
+            print("  (no [[app]] entries — kutu open will just switch to the box)")
+            return
+        }
+        for app in manifest.apps {
+            guard let command = LaunchCommand.build(for: app, in: dir) else {
+                print("  [\(app.kind.rawValue)] produces no launch command — check its fields in kutu.toml")
+                continue
+            }
+            // The CLI links only KutuCore, which has no LaunchServices access,
+            // so an .appBundle target is printed by its bundle id rather than
+            // resolved to a path.
+            let executable: String
+            switch command.target {
+            case .path(let path): executable = path
+            case .appBundle(let bundleID): executable = bundleID
+            }
+            print("  " + ([executable] + command.arguments).joined(separator: " "))
+        }
+    }
+
     switch BoxRegistration.plan(existing: config, name: manifest.name, dir: displayDir) {
     case .alreadyRegistered:
-        print("\(manifest.name) is already registered.")
+        print("\(manifest.name) is already registered -> \(displayDir)")
+        printLaunchPlan(manifest, in: cwd)
         exit(0)
 
     case .conflict(let existingDir):
@@ -144,24 +171,7 @@ case "register":
         }
 
         print("registered \(manifest.name) -> \(displayDir)")
-        if manifest.apps.isEmpty {
-            print("  (no [[app]] entries — kutu open will just switch to the box)")
-        }
-        for app in manifest.apps {
-            if let command = LaunchCommand.build(for: app, in: cwd) {
-                // The CLI links only KutuCore, which has no LaunchServices
-                // access, so an .appBundle target is printed by its bundle
-                // id rather than resolved to a path.
-                let executable: String
-                switch command.target {
-                case .path(let path): executable = path
-                case .appBundle(let bundleID): executable = bundleID
-                }
-                print("  " + ([executable] + command.arguments).joined(separator: " "))
-            } else {
-                print("  [\(app.kind.rawValue)] produces no launch command — check its fields in kutu.toml")
-            }
-        }
+        printLaunchPlan(manifest, in: cwd)
 
         if send(ControlMessage(kutu: "reload")) {
             print("reloaded the running kutu.")
