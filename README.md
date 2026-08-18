@@ -8,7 +8,7 @@ macOS 14+, Stage Manager off, Accessibility permission, a code-signing identity 
 ## Install
 
     export KUTU_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
-    scripts/build-app.sh kutu-app co.halit.kutu Kutu
+    scripts/build-app.sh kutu-app ca.halit.kutu Kutu
     swift build -c release --product kutu
     open ~/Applications/Kutu.app
     scripts/install-claude-hooks.sh   # optional: live Claude Code status

@@ -12,7 +12,7 @@ LOG="$HOME/.local/state/kutu/axcheck.log"
 mkdir -p "$(dirname "$LOG")"
 rm -f "$LOG"
 
-APP="$(scripts/build-app.sh kutu-axcheck co.halit.kutu.axcheck KutuAXCheck)"
+APP="$(scripts/build-app.sh kutu-axcheck ca.halit.kutu.axcheck KutuAXCheck)"
 open "$APP"
 
 for _ in $(seq 1 60); do
