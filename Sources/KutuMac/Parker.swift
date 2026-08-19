@@ -58,7 +58,24 @@ public final class Parker {
     public func unpark(_ id: WindowID) -> Bool {
         guard let frame = store.parkedFrames[String(id)],
               let element = resolver.element(for: id) else { return false }
-        let moved = AXBridge.setPosition(element, frame.origin)
+
+        // This is stale data, not the clamp macOS applies at park time: the
+        // saved frame was valid when it was recorded, but a display that has
+        // since been detached can leave it pointing at coordinates that no
+        // longer exist on any screen. The stored frame itself is left alone —
+        // a display often comes back, and the original position is what the
+        // user wants then — this only substitutes at the moment of
+        // restoring, so an unreachable save never becomes an unreachable
+        // restore.
+        //
+        // `frame` is Accessibility-space (top-left origin, y down); `NSScreen`
+        // is AppKit-space (bottom-left origin, y up). Both describe the same
+        // displays, but comparing them without converting would compare
+        // numbers that do not mean the same thing — the screens are flipped
+        // into Accessibility space here so they line up with `frame`.
+        let axScreens = NSScreen.screens.map { SliverMask.accessibilityRect(fromAppKit: $0.frame) }
+        let target = Geometry.reachable(frame, screens: axScreens)
+        let moved = AXBridge.setPosition(element, target.origin)
         if moved {
             AXBridge.raise(element)
             store.mutate { $0.parkedFrames.removeValue(forKey: String(id)) }
