@@ -32,6 +32,17 @@ Grant Accessibility to Kutu when prompted.
     kind = "iterm"
     cmd  = "claude"
 
+## kutu.toml is executable
+
+`cmd` in an `[[app]]` block is a shell command line, run as you when you
+`kutu open` that box. Treat a kutu.toml from a repo you did not write the way
+you would treat its Makefile — read it first. `kutu register` prints the exact
+commands the manifest produces, every time you run it; that output is the thing
+to check.
+
+Only `kind = "iterm"` interprets a shell line. The other kinds build an argument
+list for `open` and pass no shell.
+
 ## Use
 `⌥Space` switch boxes, `⌥⇧Space` move the frontmost window to a box.
 `kutu go/open/ls/register/reload/move/status/panic`. If something goes wrong: unpark everything in the menu bar, or `kutu panic`.

@@ -2,6 +2,7 @@
 .swiftpm/
 *.xcuserstate
 docs/superpowers/
+.superpowers/
 
 # personal, per-machine box manifest
 kutu.toml
