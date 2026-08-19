@@ -439,7 +439,7 @@ if let textEdit = NSWorkspace.shared.runningApplications
 
 closeAll(textEditWindows())
 
-Check.emit("=== Parker.park() refuses a park-corner frame ===")
+Check.emit("=== Parker.park() rescues a park-corner frame ===")
 
 let parkGuardFile = scratch.appendingPathComponent("park-guard.txt")
 try? "kutu".write(to: parkGuardFile, atomically: true, encoding: .utf8)
@@ -461,7 +461,7 @@ if let parkGuardWindow = parkGuardRegistry.windows.first(where: { $0.bundleID ==
    let parkGuardElement = parkGuardRegistry.element(for: parkGuardWindow.id),
    let mainScreen = NSScreen.main {
 
-    Check.run("park() refuses to record a frame already at the park corner") {
+    Check.run("park() rescues a window already at the park corner instead of abandoning it") {
         // AX coordinates are top-left origin, y down, so the far corner of the
         // main screen is simply its width/height minus a small sliver — no
         // flip needed the way there would be for a secondary screen above it.
@@ -478,9 +478,29 @@ if let parkGuardWindow = parkGuardRegistry.windows.first(where: { $0.bundleID ==
         }
 
         let parked = parkGuardParker.park(junked)
-        let recorded = StateFile(path: parkGuardStatePath).load().parkedFrames[String(junked.id)] != nil
+        guard parked else {
+            return (false, "park returned false for a park-corner window — that abandons it off-screen")
+        }
 
-        return (!parked && !recorded, "park returned \(parked), parkedFrames entry present \(recorded)")
+        guard let saved = StateFile(path: parkGuardStatePath).load().parkedFrames[String(junked.id)] else {
+            return (false, "park returned true but left no parkedFrames entry")
+        }
+        let axScreens = NSScreen.screens.map { SliverMask.accessibilityRect(fromAppKit: $0.frame) }
+        if Geometry.looksParked(saved, screens: axScreens) {
+            return (false, "saved frame \(saved) still looks parked — a rescue that trips the guard again would loop")
+        }
+
+        Thread.sleep(forTimeInterval: 0.3)
+        guard parkGuardParker.unpark(junked.id) else {
+            return (false, "unpark returned false for the rescued frame")
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+        parkGuardRegistry.refresh()
+        guard let restored = parkGuardRegistry.windows.first(where: { $0.id == junked.id }) else {
+            return (false, "window disappeared after unpark")
+        }
+        let onScreen = Geometry.visibleUnion(of: [restored.frame], screens: axScreens) != nil
+        return (onScreen, "restored frame \(restored.frame), on screen \(onScreen)")
     }
 
     // Move it back to a sane position before closing, regardless of outcome.

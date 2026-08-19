@@ -95,3 +95,27 @@ private let laptopScreen = CGRect(x: 0, y: 0, width: 2056, height: 1329)
     let frame = CGRect(x: 2016, y: 1328, width: 40, height: 1)
     #expect(!Geometry.looksParked(frame, screens: []))
 }
+
+@Test func defaultFrameForASizeSmallerThanTheScreenSitsInsideItAtTheInset() {
+    let result = Geometry.defaultFrame(forSize: CGSize(width: 800, height: 600), screens: [laptopScreen])
+    #expect(result.origin == CGPoint(x: 40, y: 40))
+    #expect(result.size == CGSize(width: 800, height: 600))
+    #expect(laptopScreen.contains(result))
+}
+
+@Test func defaultFrameForASizeLargerThanTheScreenIsShrunkToFitAndFullyInside() {
+    let result = Geometry.defaultFrame(forSize: CGSize(width: 5000, height: 5000), screens: [laptopScreen])
+    #expect(result.width <= laptopScreen.width)
+    #expect(result.height <= laptopScreen.height)
+    #expect(laptopScreen.contains(result))
+}
+
+@Test func defaultFrameWithNoScreensReturnsTheSizeAtTheOriginWithoutCrashing() {
+    let size = CGSize(width: 800, height: 600)
+    #expect(Geometry.defaultFrame(forSize: size, screens: []) == CGRect(origin: .zero, size: size))
+}
+
+@Test func defaultFrameIsNeverItselfLooksParked() {
+    let result = Geometry.defaultFrame(forSize: CGSize(width: 800, height: 600), screens: [laptopScreen])
+    #expect(!Geometry.looksParked(result, screens: [laptopScreen]))
+}

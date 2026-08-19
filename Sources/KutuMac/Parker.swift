@@ -42,18 +42,21 @@ public final class Parker {
         guard !isParked(ref.id), let element = resolver.element(for: ref.id) else { return false }
 
         // A window already sitting at the park corner is not somewhere the user
-        // put it — macOS relocates windows when a display is disconnected, and
-        // capturing that as the restore target destroys the real position
-        // permanently. Keep whatever frame we already hold, and refuse to
-        // invent one from a junk position.
-        if Geometry.looksParked(ref.frame, screens: NSScreen.screens.map(\.frame)) {
-            NSLog("kutu: refusing to record a park-corner frame for window \(ref.id) (\(ref.appName))")
-            return false
+        // put it — macOS relocates windows when a display is disconnected. Its
+        // real position is already lost, so record a sane substitute rather
+        // than either trusting the junk frame or refusing to act: refusing
+        // leaves an already-off-screen window hidden with no restore frame at
+        // all, which is how two windows became unrecoverable.
+        let screens = NSScreen.screens.map(\.frame)
+        var frameToSave = ref.frame
+        if Geometry.looksParked(ref.frame, screens: screens) {
+            frameToSave = Geometry.defaultFrame(forSize: ref.frame.size, screens: screens)
+            NSLog("kutu: window \(ref.id) (\(ref.appName)) was already at the park corner; its original position is unknown, restoring to a default")
         }
 
         // Record before moving: if kutu dies between the two, recovery still
         // knows where the window belongs. The reverse order can lose it.
-        guard store.mutate({ $0.parkedFrames[String(ref.id)] = ref.frame }) else {
+        guard store.mutate({ $0.parkedFrames[String(ref.id)] = frameToSave }) else {
             NSLog("kutu: refusing to park \(ref.id) — its frame could not be saved")
             return false
         }

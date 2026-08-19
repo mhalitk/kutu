@@ -70,4 +70,20 @@ public enum Geometry {
         }
         return false
     }
+
+    /// A reasonable on-screen frame for a window whose real position is
+    /// unknown. Sized to `size`, shrunk to fit if larger than the screen, and
+    /// placed a little inside the first screen's top-left rather than centred,
+    /// so several rescued windows do not land exactly on top of each other.
+    public static func defaultFrame(forSize size: CGSize, screens: [CGRect]) -> CGRect {
+        guard let screen = screens.first else {
+            return CGRect(origin: .zero, size: size)
+        }
+        let width = min(size.width, screen.width)
+        let height = min(size.height, screen.height)
+        let inset: CGFloat = 40
+        let x = min(screen.minX + inset, screen.maxX - width)
+        let y = min(screen.minY + inset, screen.maxY - height)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
 }
