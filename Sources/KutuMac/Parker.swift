@@ -41,6 +41,16 @@ public final class Parker {
         guard !ref.isFullScreen else { return false }
         guard !isParked(ref.id), let element = resolver.element(for: ref.id) else { return false }
 
+        // A window already sitting at the park corner is not somewhere the user
+        // put it — macOS relocates windows when a display is disconnected, and
+        // capturing that as the restore target destroys the real position
+        // permanently. Keep whatever frame we already hold, and refuse to
+        // invent one from a junk position.
+        if Geometry.looksParked(ref.frame, screens: NSScreen.screens.map(\.frame)) {
+            NSLog("kutu: refusing to record a park-corner frame for window \(ref.id) (\(ref.appName))")
+            return false
+        }
+
         // Record before moving: if kutu dies between the two, recovery still
         // knows where the window belongs. The reverse order can lose it.
         guard store.mutate({ $0.parkedFrames[String(ref.id)] = ref.frame }) else {

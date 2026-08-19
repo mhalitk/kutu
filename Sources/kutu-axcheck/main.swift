@@ -439,6 +439,62 @@ if let textEdit = NSWorkspace.shared.runningApplications
 
 closeAll(textEditWindows())
 
+Check.emit("=== Parker.park() refuses a park-corner frame ===")
+
+let parkGuardFile = scratch.appendingPathComponent("park-guard.txt")
+try? "kutu".write(to: parkGuardFile, atomically: true, encoding: .utf8)
+let openParkGuard = Process()
+openParkGuard.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openParkGuard.arguments = ["-a", "TextEdit", parkGuardFile.path]
+try? openParkGuard.run()
+openParkGuard.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+let parkGuardRegistry = WindowRegistry()
+parkGuardRegistry.start()
+parkGuardRegistry.refresh()
+let parkGuardStatePath = scratch.appendingPathComponent("park-guard.json").path
+let parkGuardParker = Parker(resolver: parkGuardRegistry,
+                             store: StateStore(file: StateFile(path: parkGuardStatePath)))
+
+if let parkGuardWindow = parkGuardRegistry.windows.first(where: { $0.bundleID == "com.apple.TextEdit" }),
+   let parkGuardElement = parkGuardRegistry.element(for: parkGuardWindow.id),
+   let mainScreen = NSScreen.main {
+
+    Check.run("park() refuses to record a frame already at the park corner") {
+        // AX coordinates are top-left origin, y down, so the far corner of the
+        // main screen is simply its width/height minus a small sliver — no
+        // flip needed the way there would be for a secondary screen above it.
+        let corner = CGPoint(x: mainScreen.frame.width - 20, y: mainScreen.frame.height - 20)
+        guard AXBridge.setPosition(parkGuardElement, corner) else {
+            return (false, "could not move window to the park corner")
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Refresh so the parker sees the corner frame, not the one it opened at.
+        parkGuardRegistry.refresh()
+        guard let junked = parkGuardRegistry.windows.first(where: { $0.id == parkGuardWindow.id }) else {
+            return (false, "window disappeared after moving to the corner")
+        }
+
+        let parked = parkGuardParker.park(junked)
+        let recorded = StateFile(path: parkGuardStatePath).load().parkedFrames[String(junked.id)] != nil
+
+        return (!parked && !recorded, "park returned \(parked), parkedFrames entry present \(recorded)")
+    }
+
+    // Move it back to a sane position before closing, regardless of outcome.
+    _ = AXBridge.setPosition(parkGuardElement, CGPoint(x: 100, y: 100))
+    Thread.sleep(forTimeInterval: 0.3)
+} else {
+    Check.run("park-corner guard window and main screen available") {
+        (false, "no TextEdit window or no main screen")
+    }
+}
+
+parkGuardRegistry.stop()
+closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h, so closing a
