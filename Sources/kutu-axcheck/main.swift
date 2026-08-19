@@ -495,6 +495,66 @@ if let parkGuardWindow = parkGuardRegistry.windows.first(where: { $0.bundleID ==
 parkGuardRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
 
+Check.emit("=== Switcher remembers the focused window per box ===")
+
+let focusMemFiles = (0..<2).map { scratch.appendingPathComponent("focusmem-\($0).txt") }
+for file in focusMemFiles { try? "kutu".write(to: file, atomically: true, encoding: .utf8) }
+let openFocusMem = Process()
+openFocusMem.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+openFocusMem.arguments = ["-a", "TextEdit"] + focusMemFiles.map(\.path)
+try? openFocusMem.run()
+openFocusMem.waitUntilExit()
+Thread.sleep(forTimeInterval: 2.0)
+
+// switchRegistry/switcher were built earlier in the Switcher block and were
+// stopped once their own windows closed; reused here rather than standing up
+// a second copy of the same wiring.
+switchRegistry.start()
+switchRegistry.refresh()
+let focusMemWindows = switchRegistry.windows.filter { $0.bundleID == "com.apple.TextEdit" }
+
+guard focusMemWindows.count >= 2,
+      let secondElement = switchRegistry.element(for: focusMemWindows[1].id),
+      let secondApp = NSRunningApplication(processIdentifier: focusMemWindows[1].pid) else {
+    Check.run("two TextEdit windows exist to test focus memory") {
+        (false, "found \(focusMemWindows.count)")
+    }
+    switchRegistry.stop()
+    closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+    Check.finish()
+}
+
+switcher.assign(focusMemWindows[0].id, to: "alpha")
+switcher.assign(focusMemWindows[1].id, to: "alpha")
+
+switcher.switchTo("alpha")
+Thread.sleep(forTimeInterval: 0.5)
+
+// Explicitly focus the second window, independent of whichever one
+// switchTo happened to bring forward.
+secondApp.activate()
+Thread.sleep(forTimeInterval: 0.3)
+AXBridge.raise(secondElement)
+Thread.sleep(forTimeInterval: 0.6)
+
+Check.run("explicitly raising the second alpha window focuses it") {
+    let focused = AXBridge.focusedWindowID(pid: focusMemWindows[1].pid)
+    return (focused == focusMemWindows[1].id, "got \(String(describing: focused)), want \(focusMemWindows[1].id)")
+}
+
+switcher.switchTo("beta")
+Thread.sleep(forTimeInterval: 0.4)
+switcher.switchTo("alpha")
+Thread.sleep(forTimeInterval: 0.6)
+
+Check.run("returning to alpha restores the window that was focused when it was left") {
+    let focused = AXBridge.focusedWindowID(pid: focusMemWindows[1].pid)
+    return (focused == focusMemWindows[1].id, "got \(String(describing: focused)), want \(focusMemWindows[1].id)")
+}
+
+switchRegistry.stop()
+closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+
 Check.finish()
 
 /// `kAXCloseAction` does not exist in AXActionConstants.h, so closing a

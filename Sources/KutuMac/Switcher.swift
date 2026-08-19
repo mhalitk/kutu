@@ -78,7 +78,10 @@ public final class Switcher {
     public func pruneDeadAssignments() {
         let living = AXBridge.liveWindowIDs()
         let before = store.membership
-        store.mutate { $0.membership.prune(livingWindowIDs: living) }
+        store.mutate {
+            $0.membership.prune(livingWindowIDs: living)
+            $0.lastFocused = $0.lastFocused.filter { living.contains($0.value) }
+        }
         let removed = before.assignmentCount - store.membership.assignmentCount
         if removed > 0 {
             NSLog("kutu: pruned \(removed) assignment(s) for windows that no longer exist")
@@ -86,6 +89,16 @@ public final class Switcher {
     }
 
     public func switchTo(_ box: String) {
+        // Captured before anything moves: once windows start parking, the
+        // frontmost application is whatever macOS fell back to, not what the
+        // user was using.
+        if let front = NSWorkspace.shared.frontmostApplication,
+           let focused = AXBridge.focusedWindowID(pid: front.processIdentifier),
+           registry.windows.contains(where: { $0.id == focused }) {
+            let leaving = store.activeBox
+            store.mutate { $0.lastFocused[leaving] = focused }
+        }
+
         registry.refresh()
         let (plan, byID) = applyPlan(target: box)
         store.mutate { $0.activeBox = box }
@@ -127,9 +140,12 @@ public final class Switcher {
         return (plan, byID)
     }
 
-    /// Brings the box to the foreground. The first declared app would be more
-    /// precise, but that lives in the manifest; falling back to any window of
-    /// the box is correct and keeps this independent of the Launcher.
+    /// Brings the box to the foreground. Prefers the window the user last had
+    /// focused in this box — restoring what they were actually doing rather
+    /// than whichever window a dictionary happened to yield first — and falls
+    /// back to any window of the box, which keeps this independent of the
+    /// Launcher (the first declared app would be more precise, but that lives
+    /// in the manifest).
     private func activatePrimaryApp(of box: String, among visible: [WindowID],
                                     byID: [WindowID: KutuWindow]) {
         guard box != Membership.lobby else { return }
@@ -141,8 +157,16 @@ public final class Switcher {
             }
             return false
         }
-        guard let target = candidates.first,
+
+        let remembered = store.lastFocused[box].flatMap { id in
+            visible.contains(id) ? byID[id] : nil
+        }
+
+        guard let target = remembered ?? candidates.first,
               let app = NSRunningApplication(processIdentifier: target.pid) else { return }
+        if let element = registry.element(for: target.id) {
+            AXBridge.raise(element)
+        }
         app.activate()
     }
 }

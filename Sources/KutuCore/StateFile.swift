@@ -6,13 +6,32 @@ public struct PersistedState: Sendable, Codable, Equatable {
     /// Window id (stringified) -> the frame the window had before it was parked.
     public var parkedFrames: [String: CGRect]
     public var activeBox: String
+    /// The window that was focused when each box was last left, so returning to
+    /// a box restores what the user was actually doing rather than whichever
+    /// window a dictionary happened to yield first.
+    public var lastFocused: [String: WindowID]
 
     public init(membership: Membership = Membership(),
                 parkedFrames: [String: CGRect] = [:],
-                activeBox: String = Membership.lobby) {
+                activeBox: String = Membership.lobby,
+                lastFocused: [String: WindowID] = [:]) {
         self.membership = membership
         self.parkedFrames = parkedFrames
         self.activeBox = activeBox
+        self.lastFocused = lastFocused
+    }
+
+    // Custom decode so a state.json written before `lastFocused` existed still
+    // loads: the field defaults to empty rather than failing the whole decode
+    // and dropping the user's boxes. `CodingKeys` is synthesized by the
+    // compiler from the stored properties even though it is never declared
+    // explicitly; `encode(to:)` is likewise synthesized.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        membership = try container.decode(Membership.self, forKey: .membership)
+        parkedFrames = try container.decode([String: CGRect].self, forKey: .parkedFrames)
+        activeBox = try container.decode(String.self, forKey: .activeBox)
+        lastFocused = try container.decodeIfPresent([String: WindowID].self, forKey: .lastFocused) ?? [:]
     }
 }
 
@@ -66,6 +85,7 @@ public final class StateStore: @unchecked Sendable {
     public var membership: Membership { snapshot().membership }
     public var activeBox: String { snapshot().activeBox }
     public var parkedFrames: [String: CGRect] { snapshot().parkedFrames }
+    public var lastFocused: [String: WindowID] { snapshot().lastFocused }
 
     /// The lock is deliberately held across the file write, not just the
     /// in-memory mutation. Releasing it first lets two writers' saves race, so

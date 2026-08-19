@@ -106,3 +106,30 @@ private func kutuWindow(_ id: WindowID) -> KutuWindow {
     try StateFile(path: path).save(seed)
     #expect(StateStore(file: StateFile(path: path)).activeBox == "seeded")
 }
+
+@Test func lastFocusedRoundTripsThroughDisk() throws {
+    let path = tempPath()
+    var state = PersistedState()
+    state.lastFocused["orchard"] = 42
+    try StateFile(path: path).save(state)
+
+    let reloaded = StateFile(path: path).load()
+    #expect(reloaded.lastFocused == ["orchard": 42])
+}
+
+// A live state.json predates `lastFocused`. Decoding it must still succeed —
+// with the field defaulting to empty — rather than failing and losing the
+// user's boxes to `StateFile.load()`'s corrupt-file fallback.
+@Test func stateWrittenBeforeLastFocusedExistedStillDecodes() throws {
+    let json = """
+    {
+        "membership": {"boxed": {"42": "orchard"}, "pinnedWindows": []},
+        "parkedFrames": {},
+        "activeBox": "orchard"
+    }
+    """
+    let decoded = try JSONDecoder().decode(PersistedState.self, from: Data(json.utf8))
+    #expect(decoded.activeBox == "orchard")
+    #expect(decoded.lastFocused.isEmpty)
+    #expect(decoded.membership.tier(of: kutuWindow(42), pinnedBundleIDs: []) == .boxed("orchard"))
+}
