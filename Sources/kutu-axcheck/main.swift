@@ -205,6 +205,22 @@ let switchParker = Parker(resolver: switchRegistry, store: switchStore)
 let switcher = Switcher(registry: switchRegistry, parker: switchParker,
                         store: switchStore, config: KutuConfig())
 
+// Everything already on screen belongs to the user, not to this harness.
+// SwitchPlan parks every window that is not in the target box, so without
+// this the checks below would park Firefox, iTerm and everything else, with
+// the only restore frames living in this process's throwaway state file. A
+// crash or a failed assertion before cleanup would leave those windows
+// off-screen and unrecoverable through kutu, which has no record of them.
+// Pinned windows are never parked, so pinning them makes the harness
+// incapable of touching anything it did not create.
+let preexisting = switchRegistry.windows.filter { $0.bundleID != "com.apple.TextEdit" }
+for window in preexisting {
+    switcher.pin(window.id)
+}
+Check.run("harness pinned \(preexisting.count) pre-existing windows so it cannot park them") {
+    (!preexisting.isEmpty, "found \(preexisting.count)")
+}
+
 let editorWindows = switchRegistry.windows.filter { $0.bundleID == "com.apple.TextEdit" }
 
 Check.run("two windows available to box up") {
@@ -294,6 +310,11 @@ Check.run("pruneDeadAssignments drops a fabricated id but keeps a live window") 
     // would also pass a test that only looked at the fabricated id.
     return (fabricatedGone && liveBox == "alpha",
             "fabricated gone=\(fabricatedGone), live box=\(liveBox)")
+}
+
+Check.run("no pre-existing window was parked by the harness") {
+    let parked = preexisting.filter { switchParker.isParked($0.id) }
+    return (parked.isEmpty, parked.map { "\($0.appName)#\($0.id)" }.joined(separator: ", "))
 }
 
 switcher.switchTo("alpha")
@@ -572,8 +593,20 @@ Check.run("returning to alpha restores the window that was focused when it was l
     return (focused == focusMemWindows[1].id, "got \(String(describing: focused)), want \(focusMemWindows[1].id)")
 }
 
+Check.run("no pre-existing window was parked by the harness (focus memory)") {
+    let parked = preexisting.filter { switchParker.isParked($0.id) }
+    return (parked.isEmpty, parked.map { "\($0.appName)#\($0.id)" }.joined(separator: ", "))
+}
+
 switchRegistry.stop()
 closeAll(AXBridge.allStandardWindows().filter { $0.ref.bundleID == "com.apple.TextEdit" })
+
+Check.run("harness left nothing of the user's parked") {
+    // Last line of defence: whatever this process parked, it unparks.
+    switchParker.unparkAll()
+    let strays = switchRegistry.windows.filter { switchParker.isParked($0.id) }
+    return (strays.isEmpty, strays.map { "\($0.appName)#\($0.id)" }.joined(separator: ", "))
+}
 
 Check.finish()
 
