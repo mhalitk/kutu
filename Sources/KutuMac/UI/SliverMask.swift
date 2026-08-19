@@ -8,6 +8,10 @@ public final class SliverMask {
     public var onClick: (() -> Void)?
 
     private let panel: NSPanel
+    /// Last rect passed to `cover(_:)`. Kept so `setLabel` can re-run
+    /// `reposition()` (the label's width can change the panel's width)
+    /// without needing the caller to pass the rect again.
+    private var coveredRect: NSRect?
     private let label = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let dot = NSView()
@@ -93,12 +97,21 @@ public final class SliverMask {
     }
 
     public func show() {
-        reposition()
         panel.orderFrontRegardless()
     }
 
     public func hide() {
         panel.orderOut(nil)
+    }
+
+    /// Positions the panel over `rect` — anchored to its bottom-right corner,
+    /// sized at least the panel's usual minimum, never smaller than `rect`
+    /// itself. `rect` is the union of the actual on-screen fragments, read
+    /// back after parking rather than predicted from screen geometry, so this
+    /// is correct for any display arrangement without knowing what it is.
+    public func cover(_ rect: NSRect) {
+        coveredRect = rect
+        reposition()
     }
 
     public func setLabel(_ text: String, state: Status?, hidden: Int = 0) {
@@ -114,16 +127,44 @@ public final class SliverMask {
         reposition()
     }
 
-    /// Anchored to the bottom-right of the main screen, which is exactly where
-    /// macOS clamps a window parked at (60000, 60000).
+    /// Anchored to the bottom-right corner of the last-covered rect — that
+    /// corner, not the screen's, because the covered rect is itself already
+    /// wherever macOS actually clamped the parked fragments, on whichever
+    /// screen that turned out to be.
     private func reposition() {
-        guard let screen = NSScreen.main else { return }
-        let width = max(Self.minWidth, label.intrinsicContentSize.width + 44)
-        let frame = NSRect(x: screen.frame.maxX - width,
-                           y: screen.frame.minY,
+        guard let rect = coveredRect else { return }
+        let width = max(Self.minWidth, rect.width, label.intrinsicContentSize.width + 44)
+        let height = max(Self.height, rect.height)
+        let frame = NSRect(x: rect.maxX - width,
+                           y: rect.minY,
                            width: width,
-                           height: Self.height)
+                           height: height)
         panel.setFrame(frame, display: true)
+    }
+
+    /// Accessibility reports a top-left origin with y growing downward; AppKit
+    /// windows use a bottom-left origin with y growing upward, both relative to
+    /// the primary screen. Converting in one place keeps the mistake findable.
+    public static func appKitRect(fromAccessibility rect: CGRect) -> NSRect {
+        guard let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero }) else {
+            return rect
+        }
+        let y = primary.frame.height - rect.origin.y - rect.height
+        return NSRect(x: rect.origin.x, y: y, width: rect.width, height: rect.height)
+    }
+
+    /// The same flip, run the other way, for callers that need to hand AppKit
+    /// geometry (e.g. `NSScreen.frame`) to code that talks to Accessibility —
+    /// `Parker`, restoring a saved AX-space frame, needs the *screens* in
+    /// that same space to compare against it. Spelled out as its own function
+    /// rather than leaned on being its own inverse, so the direction at each
+    /// call site stays obvious.
+    public static func accessibilityRect(fromAppKit rect: NSRect) -> CGRect {
+        guard let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero }) else {
+            return rect
+        }
+        let y = primary.frame.height - rect.origin.y - rect.height
+        return CGRect(x: rect.origin.x, y: y, width: rect.width, height: rect.height)
     }
 
     private static func color(for state: Status?) -> NSColor {

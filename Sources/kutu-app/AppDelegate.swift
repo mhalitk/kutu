@@ -66,6 +66,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("kutu: could not register move hotkey '\(config.moveHotkey)'")
         }
 
+        // Parked windows sit at a fixed corner (Parker.parkPoint); attaching,
+        // detaching, or rearranging a display can move that corner from past
+        // every screen's edge to INSIDE the new arrangement, which un-clamps
+        // whatever macOS was hiding there and makes hidden windows reappear.
+        // Re-parking pushes them back out to wherever the new arrangement
+        // clamps (60000, 60000) to. Do not delete this as redundant with a
+        // manual park/unpark — nothing else exercises this path.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.screenParametersChanged()
+        }
+
         switcher.onChange = { [weak self] in self?.refreshUI() }
 
         registry.onWindowAdded = { [weak self] ref in
@@ -337,10 +351,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           state: tracker.state(forBox: box,
                                                directory: config.boxes.first { $0.name == box }?.dir),
                           hidden: parker.parkedIDs.count)
-            mask.show()
+            repositionMask()
         }
 
         menuBar.refresh()
+    }
+
+    /// Where the mask goes: never predicted from the display arrangement,
+    /// always read back from where macOS actually left the parked fragments.
+    /// Refreshes the registry, resolves every parked id's current
+    /// Accessibility frame (skipping ids that no longer resolve), converts
+    /// each to AppKit coordinates, and covers the union of whatever part of
+    /// them is actually visible on some screen. Hides the mask if that union
+    /// is empty — nothing parked is currently visible anywhere.
+    private func repositionMask() {
+        guard let mask, let registry, let parker else { return }
+        registry.refresh()
+        let frames: [NSRect] = parker.parkedIDs.compactMap { id in
+            guard let element = registry.element(for: id),
+                  let position = AXBridge.position(element),
+                  let size = AXBridge.size(element) else { return nil }
+            return SliverMask.appKitRect(fromAccessibility: CGRect(origin: position, size: size))
+        }
+        if let rect = Geometry.visibleUnion(of: frames, screens: NSScreen.screens.map(\.frame)) {
+            mask.cover(rect)
+            mask.show()
+        } else {
+            mask.hide()
+        }
+    }
+
+    /// See the comment above the `didChangeScreenParametersNotification`
+    /// observer in `applicationDidFinishLaunching` for why the re-park
+    /// happens here rather than being treated as redundant.
+    private func screenParametersChanged() {
+        guard let registry, let parker else { return }
+        for id in parker.parkedIDs {
+            guard let element = registry.element(for: id) else { continue }
+            AXBridge.setPosition(element, Parker.parkPoint)
+        }
+        repositionMask()
     }
 
     /// Briefly shows `text` on the sliver mask, then returns it to its normal
