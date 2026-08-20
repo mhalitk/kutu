@@ -15,7 +15,10 @@ public final class SliverMask {
     /// Last rect passed to `cover(_:)`, kept so the panel can be re-framed
     /// without the caller having to pass it again.
     private var coveredRect: NSRect?
+    private lazy var markSide = mark.widthAnchor.constraint(equalToConstant: 0)
+    private lazy var markHeight = mark.heightAnchor.constraint(equalToConstant: 0)
     private let scrim = NSView()
+    private let mark = NSImageView()
 
     public init() {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
@@ -57,6 +60,16 @@ public final class SliverMask {
                 NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
         }
 
+        mark.imageScaling = .scaleProportionallyUpOrDown
+        mark.contentTintColor = .secondaryLabelColor
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(mark)
+        NSLayoutConstraint.activate([
+            mark.centerXAnchor.constraint(equalTo: effect.centerXAnchor),
+            mark.centerYAnchor.constraint(equalTo: effect.centerYAnchor),
+            markSide, markHeight
+        ])
+
         let click = NSClickGestureRecognizer(target: self, action: #selector(clicked))
         effect.addGestureRecognizer(click)
     }
@@ -78,9 +91,21 @@ public final class SliverMask {
         reposition()
     }
 
+    /// The mark scales with the lid and disappears entirely when the fragment
+    /// is too small to show it — the lid's job is to cover, and identifying
+    /// itself is secondary to that.
     private func reposition() {
         guard let rect = coveredRect else { return }
         panel.setFrame(rect, display: true)
+
+        if let side = Geometry.markSide(fitting: rect.size) {
+            mark.image = KutuMark.templateImage(side: side)
+            mark.isHidden = false
+            markSide.constant = side
+            markHeight.constant = side
+        } else {
+            mark.isHidden = true
+        }
     }
 
     /// Accessibility reports a top-left origin with y growing downward; AppKit

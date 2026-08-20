@@ -18,6 +18,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>$APP_NAME</string>
+<key>CFBundleIconFile</key><string>$APP_NAME</string>
 <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
 <key>CFBundleName</key><string>$APP_NAME</string>
 <key>CFBundlePackageType</key><string>APPL</string>
@@ -28,5 +29,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 cp "$BIN_DIR/$PRODUCT" "$APP/Contents/MacOS/$APP_NAME"
+
+# Rendered from KutuMark rather than copied from a committed .icns, so the icon
+# cannot fall out of step with the mark the app draws in its own UI.
+swift build -c "$CONFIG" --product kutu-icon >&2
+ICON_BIN="$(swift build -c "$CONFIG" --product kutu-icon --show-bin-path)"
+mkdir -p "$APP/Contents/Resources"
+"$ICON_BIN/kutu-icon" "$APP/Contents/Resources/$APP_NAME.icns" >&2
+
 codesign --force --sign "$KUTU_SIGN_IDENTITY" "$APP" >&2
 echo "$APP"

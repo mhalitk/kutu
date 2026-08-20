@@ -71,6 +71,20 @@ public enum Geometry {
         return false
     }
 
+    /// Side length for the kutu mark drawn inside a lid of `size`, or nil when
+    /// the lid is too small to show it legibly. The mask is sized to whatever
+    /// fragment macOS left on screen, which varies with the app's title bar, so
+    /// the mark has to scale with it rather than assume room is available.
+    public static func markSide(fitting size: CGSize,
+                                maximum: CGFloat = 28,
+                                minimum: CGFloat = 10,
+                                fraction: CGFloat = 0.6) -> CGFloat? {
+        let smaller = min(size.width, size.height)
+        guard smaller > 0 else { return nil }
+        let side = min(maximum, smaller * fraction)
+        return side >= minimum ? side : nil
+    }
+
     /// A reasonable on-screen frame for a window whose real position is
     /// unknown. Sized to `size`, shrunk to fit if larger than the screen, and
     /// placed a little inside the first screen's top-left rather than centred,

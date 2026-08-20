@@ -21,6 +21,8 @@ let package = Package(
                           swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "kutu-axcheck", dependencies: ["KutuMac"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "kutu-icon", dependencies: ["KutuMac"],
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "kutu", dependencies: ["KutuCore"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "KutuCoreTests", dependencies: ["KutuCore"],

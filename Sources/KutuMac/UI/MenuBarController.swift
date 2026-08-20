@@ -22,6 +22,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
+        // Set once. A template image is tinted by AppKit to match the
+        // appearance and the menu bar's highlight state, so it must not be
+        // rebuilt per refresh — only the title alongside it changes.
+        statusItem.button?.image = KutuMark.templateImage(side: 16)
+        statusItem.button?.imagePosition = .imageLeading
+
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -39,14 +45,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     /// long as nothing more important happens — which is the behaviour the
     /// mask had when it carried these messages.
     public func flash(_ text: String) {
-        statusItem.button?.title = "▣ \(text)"
+        statusItem.button?.title = " \(text)"
     }
 
     public func refresh() {
         let needsAttention = boxesNeedingAttention()
         let title = needsAttention.isEmpty
-            ? "▣ \(switcher.activeBox)"
-            : "▣ \(switcher.activeBox) ●\(needsAttention.count)"
+            ? " \(switcher.activeBox)"
+            : " \(switcher.activeBox) ●\(needsAttention.count)"
         statusItem.button?.title = title
     }
 

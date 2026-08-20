@@ -119,3 +119,21 @@ private let laptopScreen = CGRect(x: 0, y: 0, width: 2056, height: 1329)
     let result = Geometry.defaultFrame(forSize: CGSize(width: 800, height: 600), screens: [laptopScreen])
     #expect(!Geometry.looksParked(result, screens: [laptopScreen]))
 }
+
+@Test func markSideCapsAtTheMaximumOnALargeLid() {
+    #expect(Geometry.markSide(fitting: CGSize(width: 200, height: 120)) == 28)
+}
+
+@Test func markSideScalesWithTheSmallerDimension() {
+    // 0.6 * 40 = 24, under the 28 cap, and driven by height not width.
+    #expect(Geometry.markSide(fitting: CGSize(width: 400, height: 40)) == 24)
+}
+
+@Test func markSideIsNilWhenTheLidCannotShowItLegibly() {
+    #expect(Geometry.markSide(fitting: CGSize(width: 400, height: 12)) == nil)
+    #expect(Geometry.markSide(fitting: .zero) == nil)
+}
+
+@Test func markSideIgnoresNegativeDimensions() {
+    #expect(Geometry.markSide(fitting: CGSize(width: -100, height: 80)) == nil)
+}
