@@ -5,7 +5,16 @@ set -euo pipefail
 
 PRODUCT="$1"; BUNDLE_ID="$2"; APP_NAME="$3"
 CONFIG="${CONFIG:-debug}"
-: "${KUTU_SIGN_IDENTITY:?set KUTU_SIGN_IDENTITY (e.g. 'Apple Development: Your Name (TEAMID)')}"
+# Ad-hoc by default, so a clone builds with no Apple account of any kind. That
+# is enough to run the app, but macOS identifies an ad-hoc signature by its
+# hash: every rebuild looks like a different app and Accessibility has to be
+# granted again. Setting KUTU_SIGN_IDENTITY to a real certificate ties the
+# signature to your team and bundle id instead, and the grant survives rebuilds.
+SIGN_IDENTITY="${KUTU_SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "build-app.sh: signing ad-hoc; expect to re-grant Accessibility after each rebuild." >&2
+    echo "              set KUTU_SIGN_IDENTITY to a certificate to avoid that (see README)." >&2
+fi
 
 swift build -c "$CONFIG" --product "$PRODUCT" >&2
 BIN_DIR="$(swift build -c "$CONFIG" --product "$PRODUCT" --show-bin-path)"
@@ -37,5 +46,5 @@ ICON_BIN="$(swift build -c "$CONFIG" --product kutu-icon --show-bin-path)"
 mkdir -p "$APP/Contents/Resources"
 "$ICON_BIN/kutu-icon" "$APP/Contents/Resources/$APP_NAME.icns" >&2
 
-codesign --force --sign "$KUTU_SIGN_IDENTITY" "$APP" >&2
+codesign --force --sign "$SIGN_IDENTITY" "$APP" >&2
 echo "$APP"

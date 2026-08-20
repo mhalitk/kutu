@@ -3,17 +3,31 @@
 Workspace containers for macOS. A box is a named set of windows; switching boxes parks every window not in the target box far off-screen via the Accessibility API.
 
 ## Requirements
-macOS 14+, Stage Manager off, Accessibility permission, a code-signing identity (`security find-identity -v -p codesigning`).
+macOS 14+, Stage Manager off, Accessibility permission.
 
 ## Install
 
-    export KUTU_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
     scripts/build-app.sh kutu-app ca.halit.kutu Kutu
     swift build -c release --product kutu
     open ~/Applications/Kutu.app
     scripts/install-claude-hooks.sh   # optional: live Claude Code status
 
 Grant Accessibility to Kutu when prompted.
+
+### Signing
+
+The build signs ad-hoc by default, so the above works with no Apple account.
+The cost is that macOS identifies an ad-hoc signature by its hash: every
+rebuild looks like a new app, so you have to remove Kutu from
+Privacy & Security > Accessibility and grant it again.
+
+To keep the grant across rebuilds, sign with a certificate. A free Apple ID is
+enough — add it in Xcode > Settings > Accounts and it will issue an
+`Apple Development` certificate under a personal team. No paid membership is
+involved; that is only needed to distribute builds to other people.
+
+    security find-identity -v -p codesigning
+    export KUTU_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
 
 ## Configure
 
