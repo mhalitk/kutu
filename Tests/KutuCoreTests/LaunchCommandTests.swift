@@ -132,3 +132,19 @@ import Testing
     #expect(script.contains("tell current session of newWindow"))
     #expect(!script.contains("current session of current window"))
 }
+
+@Test func carriageReturnCannotTerminateTheAppleScriptStatement() {
+    // A raw CR ends a statement in AppleScript exactly as a newline does, and
+    // CR is legal in a macOS filename, so it has to be escaped like one.
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "echo hi\rdo shell script \"evil\""),
+                                      in: "/w/a")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(!script.contains("\r"))
+    #expect(script.contains("\\r"))
+}
+
+@Test func carriageReturnInTheDirectoryIsEscapedToo() {
+    let command = LaunchCommand.build(for: AppSpec(kind: .iterm, cmd: "claude"), in: "/w/a\rb")
+    let script = command?.arguments.joined(separator: " ") ?? ""
+    #expect(!script.contains("\r"))
+}

@@ -50,3 +50,55 @@ import Foundation
     #expect(BoxRegistration.displayPath("/Users/x", home: "/Users/x") == "~")
     #expect(BoxRegistration.displayPath("/opt/orchard", home: "/Users/x") == "/opt/orchard")
 }
+
+// A box name reaches `plan` straight from a repo's kutu.toml, and the block it
+// returns is appended verbatim to the user's global boxes.toml. Anything that
+// would need escaping inside a TOML basic string is therefore refused, so the
+// interpolation cannot be broken out of.
+
+@Test func nameContainingAQuoteIsRefused() {
+    let outcome = BoxRegistration.plan(existing: KutuConfig(),
+                                       name: "innocent\"\ndir = \"/tmp/attacker\"\n[[box]]\nname = \"backdoor",
+                                       dir: "~/code/thing")
+    guard case .invalid = outcome else {
+        Issue.record("expected .invalid, got \(outcome)")
+        return
+    }
+}
+
+@Test func nameContainingABackslashOrControlCharacterIsRefused() {
+    for name in ["back\\slash", "tab\there", "bell\u{07}"] {
+        guard case .invalid = BoxRegistration.plan(existing: KutuConfig(), name: name, dir: "~/x") else {
+            Issue.record("expected .invalid for \(name)")
+            return
+        }
+    }
+}
+
+@Test func directoryContainingAQuoteIsRefused() {
+    // macOS permits a quote in a filename, so a repo cloned into one would
+    // otherwise inject through `dir` instead of `name`.
+    let outcome = BoxRegistration.plan(existing: KutuConfig(), name: "fine",
+                                       dir: "~/code/od\"d")
+    guard case .invalid = outcome else {
+        Issue.record("expected .invalid, got \(outcome)")
+        return
+    }
+}
+
+@Test func emptyNameIsRefused() {
+    guard case .invalid = BoxRegistration.plan(existing: KutuConfig(), name: "", dir: "~/x") else {
+        Issue.record("expected .invalid")
+        return
+    }
+}
+
+@Test func nonASCIINamesAreStillAccepted() {
+    // The rule is about TOML escaping, not about being English.
+    guard case .append(let block) = BoxRegistration.plan(existing: KutuConfig(),
+                                                         name: "müşteri", dir: "~/code/müşteri") else {
+        Issue.record("expected .append")
+        return
+    }
+    #expect(block.contains("name = \"müşteri\""))
+}

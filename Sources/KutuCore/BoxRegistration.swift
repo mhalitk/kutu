@@ -9,6 +9,29 @@ public enum BoxRegistration {
         case alreadyRegistered
         case conflict(existingDir: String)
         case append(block: String)
+        /// The name or directory could not be written to the config safely.
+        case invalid(field: String, reason: String)
+    }
+
+    /// Whether `value` can be interpolated into a TOML basic string as-is.
+    ///
+    /// The block `plan` returns is appended verbatim to the user's global
+    /// boxes.toml, and a box name arrives straight from a repo's kutu.toml —
+    /// which the user may not have written. Rejecting exactly the characters
+    /// that would need escaping is what keeps the interpolation below safe:
+    /// there is then nothing left that could close the string early and add
+    /// entries of its own. A box name is also something you type into the
+    /// palette, so nothing being refused here has a legitimate use.
+    ///
+    /// Deliberately not an allowlist of ASCII — the rule is about TOML
+    /// escaping, not about which alphabet a box is named in.
+    public static func isSafeForConfig(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        return !value.unicodeScalars.contains { scalar in
+            scalar == "\"" || scalar == "\\"
+                || CharacterSet.controlCharacters.contains(scalar)
+                || CharacterSet.newlines.contains(scalar)
+        }
     }
 
     /// Decides what registering `name` at `dir` means against an existing
@@ -21,6 +44,14 @@ public enum BoxRegistration {
     /// itself (tilde form or absolute, whatever the caller wants stored) is
     /// used verbatim in the appended block.
     public static func plan(existing: KutuConfig, name: String, dir: String) -> Outcome {
+        guard isSafeForConfig(name) else {
+            return .invalid(field: "name",
+                            reason: "a box name cannot be empty or contain quotes, backslashes or control characters")
+        }
+        guard isSafeForConfig(dir) else {
+            return .invalid(field: "dir",
+                            reason: "the directory path contains quotes, backslashes or control characters")
+        }
         let normalizedNewDir = withoutTrailingSlash((dir as NSString).expandingTildeInPath)
         if let match = existing.boxes.first(where: { $0.name == name }) {
             let normalizedExistingDir = withoutTrailingSlash(match.dir)

@@ -89,10 +89,16 @@ public enum LaunchCommand {
     /// replaced first, or the escapes introduced below would themselves be
     /// escaped. A raw newline is invalid inside an AppleScript literal, so it
     /// becomes the `\n` escape rather than being passed through.
+    ///
+    /// Carriage return gets the same treatment for the same reason: it ends a
+    /// statement in AppleScript exactly as a newline does, and it is legal in a
+    /// macOS filename, so a directory can carry one in without anyone typing it
+    /// deliberately.
     private static func appleScriptEscaped(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
     }
 }

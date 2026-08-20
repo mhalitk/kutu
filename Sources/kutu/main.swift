@@ -139,6 +139,13 @@ case "register":
     }
 
     switch BoxRegistration.plan(existing: config, name: manifest.name, dir: displayDir) {
+    // Refused rather than escaped: the block is appended verbatim to the
+    // global boxes.toml, and `name` comes from this directory's kutu.toml,
+    // which whoever wrote this repo controls.
+    case .invalid(let field, let reason):
+        print("refusing to register: \(reason) (\(field))")
+        exit(1)
+
     case .alreadyRegistered:
         print("\(manifest.name) is already registered -> \(displayDir)")
         printLaunchPlan(manifest, in: cwd)
