@@ -33,6 +33,15 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         refresh()
     }
 
+    /// Shows `text` in place of the usual title until the next `refresh()`.
+    /// The caller owns the restore: every path that changes what the title
+    /// should say already ends in `refresh()`, so a hint survives exactly as
+    /// long as nothing more important happens — which is the behaviour the
+    /// mask had when it carried these messages.
+    public func flash(_ text: String) {
+        statusItem.button?.title = "▣ \(text)"
+    }
+
     public func refresh() {
         let needsAttention = boxesNeedingAttention()
         let title = needsAttention.isEmpty

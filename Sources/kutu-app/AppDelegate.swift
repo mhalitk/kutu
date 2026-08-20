@@ -338,7 +338,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // torn down, so this tolerates a half-built delegate rather than
         // relying on call ordering alone.
         guard let mask, let menuBar else { return }
-        let box = switcher.activeBox
 
         // The mask exists to cover the fragments macOS leaves behind when a
         // window is parked. With nothing parked there is nothing to cover, so
@@ -347,10 +346,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if parker.parkedIDs.isEmpty {
             mask.hide()
         } else {
-            mask.setLabel(box,
-                          state: tracker.state(forBox: box,
-                                               directory: config.boxes.first { $0.name == box }?.dir),
-                          hidden: parker.parkedIDs.count)
             repositionMask()
         }
 
@@ -393,16 +388,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         repositionMask()
     }
 
-    /// Briefly shows `text` on the sliver mask, then returns it to its normal
-    /// state. A hint that arrives before the previous one expires replaces it
+    /// Briefly shows `text` in the menu bar title, then returns it to its
+    /// normal state. A hint that arrives before the previous one expires replaces it
     /// and restarts the timer, rather than leaving a stale message or hiding
     /// early — `hintGeneration` lets the deferred restore recognise it has
     /// been superseded and no-op.
     private func flashHint(_ text: String) {
         hintGeneration += 1
         let generation = hintGeneration
-        mask.setLabel(text, state: nil)
-        mask.show()
+        menuBar.flash(text)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
             guard let self, self.hintGeneration == generation else { return }
             self.refreshUI()
