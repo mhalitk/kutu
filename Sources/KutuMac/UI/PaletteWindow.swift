@@ -78,7 +78,7 @@ final class PaletteRowView: NSTableRowView {
 
 /// A non-activating overlay: showing it must not change which application is
 /// frontmost, or the switch it triggers would land in the wrong place.
-public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate, NSWindowDelegate {
     /// One row in the list. Wraps `PaletteRow` (a real box) with the
     /// synthetic "pin to every box" row that only exists in move mode.
     private enum Entry {
@@ -117,6 +117,10 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     /// in `present(moving:boxes:onPick:)`.
     private var digitMonitor: Any?
 
+    /// Guards `windowDidResignKey` against the resignation `orderOut` itself
+    /// provokes, which would otherwise re-enter `dismiss()` from inside it.
+    private var isDismissing = false
+
     /// Exactly one of these is active at a time: the hairline sits directly
     /// under the field in go mode, and under the subject line in move mode.
     /// Built once in `init`, toggled on every `present`.
@@ -149,6 +153,7 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
         panel.backgroundColor = .clear
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.delegate = self
 
         // `.hudWindow` is a DARK material: in Light mode it renders as
         // translucent grey and the desktop reads straight through, so the
@@ -327,8 +332,22 @@ public final class PaletteWindow: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     public func dismiss() {
+        isDismissing = true
+        defer { isDismissing = false }
         panel.orderOut(nil)
         removeDigitMonitor()
+    }
+
+    /// Clicking any other window drops the panel's key status — the panel is
+    /// non-activating, so it is key without kutu being the active app, and
+    /// losing that is the only signal that attention went elsewhere. Treated
+    /// as a cancel: the palette is a transient prompt, and one left floating
+    /// over whatever the user turned to would act on a window they had
+    /// already moved on from. Space switches and Mission Control resign key
+    /// the same way, and are dismissed for the same reason.
+    public func windowDidResignKey(_ notification: Notification) {
+        guard !isDismissing, panel.isVisible else { return }
+        dismiss()
     }
 
     public var isVisible: Bool { panel.isVisible }
