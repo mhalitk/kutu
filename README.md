@@ -18,8 +18,12 @@ Grant Accessibility to Kutu when prompted.
 
 The build signs ad-hoc by default, so the above works with no Apple account.
 The cost is that macOS identifies an ad-hoc signature by its hash: every
-rebuild looks like a new app, so you have to remove Kutu from
-Privacy & Security > Accessibility and grant it again.
+rebuild looks like a new app, so the Accessibility grant has to be given
+again. The stale entry from the previous build is still listed, and turning
+it back on does not take — it reverts the next time Kutu launches. Clear it
+first, then relaunch and grant when prompted:
+
+    tccutil reset Accessibility ca.halit.kutu
 
 To keep the grant across rebuilds, sign with a certificate. A free Apple ID is
 enough — add it in Xcode > Settings > Accounts and it will issue an

@@ -406,7 +406,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func presentTrustAlert() {
         let alert = NSAlert()
         alert.messageText = "kutu needs Accessibility access"
-        alert.informativeText = "Enable kutu in System Settings → Privacy & Security → Accessibility, then relaunch."
+        // Ad-hoc builds change identity on every rebuild, which leaves behind a
+        // stale entry that silently refuses to stay on — the switch reverts at
+        // the next launch, and it reads as the grant simply not working.
+        // Naming the reset here is the difference between a 10-second fix and
+        // a dead end.
+        let bundleID = Bundle.main.bundleIdentifier ?? "ca.halit.kutu"
+        alert.informativeText = """
+            Enable kutu in System Settings → Privacy & Security → Accessibility, then relaunch.
+
+            After a rebuild, kutu may already be listed from the previous build. If the switch will not stay on, clear the old entry first:
+
+            tccutil reset Accessibility \(bundleID)
+            """
         alert.addButton(withTitle: "Quit")
         alert.runModal()
         NSApp.terminate(nil)
