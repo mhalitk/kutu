@@ -9,33 +9,51 @@ private let secondScreen = CGRect(x: 579, y: -1117, width: 1728, height: 1117)
 /// the laptop alone after the external display was disconnected.
 private let laptopScreen = CGRect(x: 0, y: 0, width: 2056, height: 1329)
 
-@Test func visibleUnionOfAFrameWhollyOnAScreenReturnsItself() {
+@Test func visibleFragmentsOfAFrameWhollyOnAScreenIsItself() {
     let frame = CGRect(x: 100, y: 100, width: 300, height: 200)
-    #expect(Geometry.visibleUnion(of: [frame], screens: [mainScreen]) == frame)
+    #expect(Geometry.visibleFragments(of: [frame], screens: [mainScreen]) == [frame])
 }
 
-@Test func visibleUnionOfAFrameStraddlingAnEdgeReturnsOnlyTheOnScreenPart() {
+@Test func visibleFragmentsOfAFrameStraddlingAnEdgeIsOnlyTheOnScreenPart() {
     // Sits mostly off the right edge of a 100x100 screen.
     let frame = CGRect(x: 80, y: 0, width: 100, height: 50)
     let screen = CGRect(x: 0, y: 0, width: 100, height: 100)
     let expected = CGRect(x: 80, y: 0, width: 20, height: 50)
-    #expect(Geometry.visibleUnion(of: [frame], screens: [screen]) == expected)
+    #expect(Geometry.visibleFragments(of: [frame], screens: [screen]) == [expected])
 }
 
-@Test func visibleUnionOfAFrameOnNoScreenReturnsNil() {
+@Test func visibleFragmentsOfAFrameOnNoScreenIsEmpty() {
     let frame = CGRect(x: 60000, y: 60000, width: 40, height: 40)
-    #expect(Geometry.visibleUnion(of: [frame], screens: [mainScreen, secondScreen]) == nil)
+    #expect(Geometry.visibleFragments(of: [frame], screens: [mainScreen, secondScreen]).isEmpty)
 }
 
-@Test func visibleUnionOfSeveralFramesReturnsTheirUnion() {
+@Test func visibleFragmentsMergesOverlappingFrames() {
+    let a = CGRect(x: 0, y: 0, width: 20, height: 20)
+    let b = CGRect(x: 10, y: 10, width: 20, height: 20)
+    #expect(Geometry.visibleFragments(of: [a, b], screens: [mainScreen]) == [a.union(b)])
+}
+
+@Test func visibleFragmentsKeepsDisjointFramesApart() {
+    // Two slivers at the same edge but different heights: one lid over both
+    // would cover the desktop between them.
+    let top = CGRect(x: 2520, y: 25, width: 40, height: 32)
+    let bottom = CGRect(x: 2520, y: 1400, width: 40, height: 40)
+    let result = Geometry.visibleFragments(of: [top, bottom], screens: [mainScreen])
+    #expect(result.count == 2)
+    #expect(result.contains(top) && result.contains(bottom))
+}
+
+@Test func visibleFragmentsMergesTransitively() {
+    // c bridges a and b, which do not touch each other.
     let a = CGRect(x: 0, y: 0, width: 10, height: 10)
-    let b = CGRect(x: 50, y: 50, width: 10, height: 10)
-    let expected = a.union(b)
-    #expect(Geometry.visibleUnion(of: [a, b], screens: [mainScreen]) == expected)
+    let b = CGRect(x: 30, y: 0, width: 10, height: 10)
+    let c = CGRect(x: 5, y: 0, width: 30, height: 10)
+    #expect(Geometry.visibleFragments(of: [a, b, c], screens: [mainScreen])
+            == [CGRect(x: 0, y: 0, width: 40, height: 10)])
 }
 
-@Test func visibleUnionOfEmptyInputReturnsNil() {
-    #expect(Geometry.visibleUnion(of: [], screens: [mainScreen, secondScreen]) == nil)
+@Test func visibleFragmentsOfEmptyInputIsEmpty() {
+    #expect(Geometry.visibleFragments(of: [], screens: [mainScreen, secondScreen]).isEmpty)
 }
 
 @Test func reachableFrameAlreadyIntersectingIsReturnedUnchanged() {
@@ -89,6 +107,30 @@ private let laptopScreen = CGRect(x: 0, y: 0, width: 2056, height: 1329)
 @Test func frameAtTheFarEdgeOfASecondScreenIsParked() {
     let frame = CGRect(x: 3704, y: 1116, width: 40, height: 1)
     #expect(Geometry.looksParked(frame, screens: [mainScreen, secondScreen]))
+}
+
+/// An external main display with the laptop to its left, in Accessibility
+/// space: the arrangement where edge-based detection flagged every window.
+private let externalMain = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+private let laptopLeft = CGRect(x: -1728, y: 300, width: 1728, height: 1117)
+
+@Test func windowsOnAMainDisplayBesideASecondScreenAreNotParked() {
+    let leftHalf = CGRect(x: 0, y: 25, width: 1280, height: 1415)
+    let rightHalf = CGRect(x: 1280, y: 25, width: 1280, height: 1415)
+    #expect(!Geometry.looksParked(leftHalf, screens: [externalMain, laptopLeft]))
+    #expect(!Geometry.looksParked(rightHalf, screens: [externalMain, laptopLeft]))
+}
+
+@Test func aLowWindowOnATallerDisplayIsNotParked() {
+    // Below the laptop's bottom edge, which is not the bottom of the desktop.
+    let frame = CGRect(x: 200, y: 1200, width: 800, height: 240)
+    #expect(!Geometry.looksParked(frame, screens: [externalMain, laptopLeft]))
+}
+
+@Test func aParkedWindowAtTheRealSizeIsStillParked() {
+    // The clamp keeps the window's full size; only a corner stays visible.
+    let frame = CGRect(x: 2520, y: 1408, width: 1280, height: 1415)
+    #expect(Geometry.looksParked(frame, screens: [externalMain, laptopLeft]))
 }
 
 @Test func withNoScreensNothingIsParked() {

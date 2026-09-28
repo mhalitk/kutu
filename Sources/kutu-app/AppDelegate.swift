@@ -356,9 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// always read back from where macOS actually left the parked fragments.
     /// Refreshes the registry, resolves every parked id's current
     /// Accessibility frame (skipping ids that no longer resolve), converts
-    /// each to AppKit coordinates, and covers the union of whatever part of
-    /// them is actually visible on some screen. Hides the mask if that union
-    /// is empty — nothing parked is currently visible anywhere.
+    /// each to AppKit coordinates, and covers each separate fragment of them
+    /// that is actually visible on some screen. Hides the mask when there are
+    /// none — nothing parked is currently visible anywhere.
     private func repositionMask() {
         guard let mask, let registry, let parker else { return }
         registry.refresh()
@@ -368,8 +368,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let size = AXBridge.size(element) else { return nil }
             return SliverMask.appKitRect(fromAccessibility: CGRect(origin: position, size: size))
         }
-        if let rect = Geometry.visibleUnion(of: frames, screens: NSScreen.screens.map(\.frame)) {
-            mask.cover(rect)
+        let fragments = Geometry.visibleFragments(of: frames, screens: NSScreen.screens.map(\.frame))
+        if !fragments.isEmpty {
+            mask.cover(fragments)
             mask.show()
         } else {
             mask.hide()

@@ -47,7 +47,9 @@ public final class Parker {
         // than either trusting the junk frame or refusing to act: refusing
         // leaves an already-off-screen window hidden with no restore frame at
         // all, which is how two windows became unrecoverable.
-        let screens = NSScreen.screens.map(\.frame)
+        // `ref.frame` is Accessibility-space; see `unpark` for why the screens
+        // are flipped to match rather than compared raw.
+        let screens = NSScreen.screens.map { SliverMask.accessibilityRect(fromAppKit: $0.frame) }
         var frameToSave = ref.frame
         if Geometry.looksParked(ref.frame, screens: screens) {
             frameToSave = Geometry.defaultFrame(forSize: ref.frame.size, screens: screens)

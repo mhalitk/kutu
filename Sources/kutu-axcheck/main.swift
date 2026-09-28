@@ -520,7 +520,7 @@ if let parkGuardWindow = parkGuardRegistry.windows.first(where: { $0.bundleID ==
         guard let restored = parkGuardRegistry.windows.first(where: { $0.id == junked.id }) else {
             return (false, "window disappeared after unpark")
         }
-        let onScreen = Geometry.visibleUnion(of: [restored.frame], screens: axScreens) != nil
+        let onScreen = !Geometry.visibleFragments(of: [restored.frame], screens: axScreens).isEmpty
         return (onScreen, "restored frame \(restored.frame), on screen \(onScreen)")
     }
 

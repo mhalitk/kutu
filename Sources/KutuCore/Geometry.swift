@@ -8,18 +8,26 @@ import CoreGraphics
 /// this module never predicts an arrangement — callers park, then read back
 /// the resulting frame and hand it here.
 public enum Geometry {
-    /// The parts of `frames` that actually fall on a screen, unioned into one
-    /// rect. nil when none of them are visible anywhere.
-    public static func visibleUnion(of frames: [CGRect], screens: [CGRect]) -> CGRect? {
-        var union: CGRect?
+    /// The parts of `frames` that actually fall on a screen, one rect per
+    /// separate region. Fragments that overlap are merged, but disjoint ones
+    /// are kept apart: parked windows can land at different heights or on
+    /// different displays, and a single bounding rect over all of them would
+    /// cover the desktop in between. Empty when nothing is visible anywhere.
+    public static func visibleFragments(of frames: [CGRect], screens: [CGRect]) -> [CGRect] {
+        var fragments: [CGRect] = []
         for frame in frames {
             for screen in screens {
-                let visible = frame.intersection(screen)
-                guard !visible.isNull, !visible.isEmpty else { continue }
-                union = union?.union(visible) ?? visible
+                var piece = frame.intersection(screen)
+                guard !piece.isNull, !piece.isEmpty else { continue }
+                // Absorbing one fragment can make the grown rect reach another,
+                // so keep merging until nothing left overlaps it.
+                while let index = fragments.firstIndex(where: { $0.intersects(piece) }) {
+                    piece = piece.union(fragments.remove(at: index))
+                }
+                fragments.append(piece)
             }
         }
-        return union
+        return fragments
     }
 
     /// A frame guaranteed to intersect a screen. Returns `frame` unchanged when
@@ -52,23 +60,21 @@ public enum Geometry {
     }
 
     /// Whether a frame looks like a window that is already parked rather than
-    /// one the user positioned. macOS clamps a parked window to a desktop
-    /// corner leaving only a sliver on screen, so a frame whose origin sits
-    /// within `tolerance` of any screen's far edge is not a position worth
-    /// restoring to.
+    /// one the user positioned. macOS clamps a parked window so only a sliver
+    /// of it stays on screen, so a frame is parked when no part of it visible
+    /// on any screen is wider and taller than `tolerance` — including when
+    /// nothing of it is visible at all.
     ///
-    /// Both axes are checked with `or`, not `and`: the clamp leaves a
-    /// window's title bar height visible, and that height varies per app, so
-    /// only one axis may sit exactly at the extreme while the other is
-    /// merely near it.
+    /// Judged by what is visible, not by where the origin sits relative to
+    /// screen edges: with several displays, the far edge of one screen is the
+    /// middle of the desktop, and an origin test there flags ordinary windows
+    /// on the neighbouring display as parked. `frame` and `screens` must be in
+    /// the same coordinate space.
     public static func looksParked(_ frame: CGRect, screens: [CGRect], tolerance: CGFloat = 48) -> Bool {
         guard !screens.isEmpty else { return false }
-        for screen in screens {
-            if frame.origin.x >= screen.maxX - tolerance || frame.origin.y >= screen.maxY - tolerance {
-                return true
-            }
+        return !visibleFragments(of: [frame], screens: screens).contains {
+            $0.width > tolerance && $0.height > tolerance
         }
-        return false
     }
 
     /// Side length for the kutu mark drawn inside a lid of `size`, or nil when
