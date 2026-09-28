@@ -72,6 +72,28 @@ public enum AXBridge {
     }
 
     @discardableResult
+    public static func setSize(_ element: AXUIElement, _ size: CGSize) -> Bool {
+        var value = size
+        guard let wrapped = AXValueCreate(.cgSize, &value) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, wrapped) == .success
+    }
+
+    /// Runs `body` with the owning app's `AXEnhancedUserInterface` switched
+    /// off, restoring it afterwards. Apps that honour the flag (Firefox,
+    /// Chromium) animate Accessibility frame changes while it is on, and a
+    /// resize issued straight after a move is lost to the animation.
+    public static func withEnhancedUIDisabled<T>(for element: AXUIElement, _ body: () -> T) -> T {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return body() }
+        let app = AXUIElementCreateApplication(pid)
+        let attribute = "AXEnhancedUserInterface" as CFString
+        guard bool(app, "AXEnhancedUserInterface") == true else { return body() }
+        AXUIElementSetAttributeValue(app, attribute, kCFBooleanFalse)
+        defer { AXUIElementSetAttributeValue(app, attribute, kCFBooleanTrue) }
+        return body()
+    }
+
+    @discardableResult
     public static func raise(_ element: AXUIElement) -> Bool {
         AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success
     }

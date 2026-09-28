@@ -90,7 +90,20 @@ public final class Parker {
         // into Accessibility space here so they line up with `frame`.
         let axScreens = NSScreen.screens.map { SliverMask.accessibilityRect(fromAppKit: $0.frame) }
         let target = Geometry.reachable(frame, screens: axScreens)
-        let moved = AXBridge.setPosition(element, target.origin)
+        // Parking can shrink the window too: macOS clamps it onto whichever
+        // display holds the park corner, and a window taller than that
+        // display is cut down to fit. Position alone would bring it back at
+        // the smaller size, so restore the size once it is on its own display
+        // again — then re-place it, since a resize can nudge the origin. A
+        // failed resize is not a failed unpark; the window is reachable
+        // either way.
+        let moved = AXBridge.withEnhancedUIDisabled(for: element) {
+            guard AXBridge.setPosition(element, target.origin) else { return false }
+            if AXBridge.setSize(element, target.size) {
+                AXBridge.setPosition(element, target.origin)
+            }
+            return true
+        }
         if moved {
             AXBridge.raise(element)
             store.mutate { $0.parkedFrames.removeValue(forKey: String(id)) }
